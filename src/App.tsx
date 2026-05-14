@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useRef, useEffect, Suspense } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect } from 'react';
 import { 
   Box, 
   Send, 
@@ -13,26 +13,17 @@ import {
   ChevronRight, 
   Code as CodeIcon,
   Loader2,
-  FileDown,
   Monitor,
-  Maximize2,
   Layers,
   Cpu,
-  BoxSelect,
   ArrowDown,
   Settings,
-  ClipboardCheck,
-  Clipboard,
   RefreshCw,
-  Info,
   Save,
-  User,
-  Share2,
   Command,
   HelpCircle,
   Package,
   Wrench,
-  Disc,
   Database,
   Wind,
   Undo2,
@@ -44,13 +35,29 @@ import {
   Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import ReactMarkdown from 'react-markdown';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Grid, PerspectiveCamera, Environment, Float, Stage } from '@react-three/drei';
-import * as THREE from 'three';
-import { geminiService, ChatMessage } from './services/geminiService';
+import type { ChatMessage } from './services/geminiService';
 
-import { JscadRenderer } from './components/JscadRenderer';
+const Preview3D = lazy(() => import('./components/Preview3D'));
+const ReactMarkdown = lazy(() => import('react-markdown'));
+
+function PreviewFallback() {
+  return (
+    <div className="h-full w-full bg-app-bg border border-app-border rounded-md flex items-center justify-center">
+      <div className="flex items-center gap-3 text-app-text-muted">
+        <Loader2 className="w-4 h-4 animate-spin text-[#3b82f6]" />
+        <span className="text-[10px] font-black uppercase tracking-widest">Loading 3D engine</span>
+      </div>
+    </div>
+  );
+}
+
+function MarkdownView({ children }: { children: string }) {
+  return (
+    <Suspense fallback={<span>{children}</span>}>
+      <ReactMarkdown>{children}</ReactMarkdown>
+    </Suspense>
+  );
+}
 
 const PART_LIBRARY = [
   {
@@ -104,157 +111,6 @@ const PART_LIBRARY = [
   }
 ];
 
-function ModelPlaceholder({ jscadCode, modelParams, onError }: { jscadCode: string | null; modelParams: any; onError?: (err: string) => void }) {
-  const meshRef = useRef<THREE.Mesh>(null!);
-  useFrame((state) => {
-    if (meshRef.current && !jscadCode) {
-      meshRef.current.rotation.y = state.clock.getElapsedTime() * 0.3;
-    }
-  });
-
-  if (jscadCode) {
-    return (
-      <group rotation={[Math.PI / 2, 0, 0]}>
-        <JscadRenderer jscadCode={jscadCode} modelParams={modelParams} onError={onError} />
-      </group>
-    );
-  }
-
-  return (
-    <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-      <mesh ref={meshRef}>
-        <boxGeometry args={[2, 2, 2]} />
-        <meshStandardMaterial color="#007acc" wireframe />
-      </mesh>
-    </Float>
-  );
-}
-
-function Preview3D({ isProcessing, jscadCode, modelParams, onExportStl, onExportScad, showGrid, toggleGrid, onError, renderError, onRepair, t }: { 
-  isProcessing: boolean; 
-  jscadCode: string | null; 
-  modelParams: any;
-  onExportStl?: () => void; 
-  onExportScad?: () => void;
-  showGrid: boolean;
-  toggleGrid: () => void;
-  onError?: (err: string | null) => void; 
-  renderError: string | null;
-  onRepair?: () => void;
-  t: any;
-}) {
-  return (
-    <div className="w-full h-full bg-app-bg relative rounded-md overflow-hidden border border-app-border group">
-      <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
-          <div className="bg-app-surface/70 backdrop-blur-md px-3 py-1.5 rounded-md border border-app-border flex items-center gap-2 shadow-xl">
-            <div className={`w-1.5 h-1.5 rounded-full ${isProcessing ? 'bg-[#3b82f6] animate-pulse' : renderError ? 'bg-red-500' : 'bg-emerald-500'}`}></div>
-            <span className="text-[9px] font-bold text-app-text-dim uppercase tracking-widest">
-               {isProcessing ? t.processing : renderError ? 'Error' : t.ready}
-            </span>
-         </div>
-      </div>
-
-      {!jscadCode && !isProcessing && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-          <div className="text-center max-w-xs px-6">
-            <div className="w-12 h-12 rounded-xl border border-app-border bg-app-surface/80 backdrop-blur-md flex items-center justify-center mx-auto mb-4 shadow-xl">
-              <BoxSelect className="w-6 h-6 text-[#3b82f6]" />
-            </div>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-app-text">Ready for a model</p>
-            <p className="text-[11px] text-app-text-muted mt-2 leading-relaxed">Describe a part below or choose a library preset.</p>
-          </div>
-        </div>
-      )}
-
-      {isProcessing && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-app-bg/45 backdrop-blur-[2px]">
-          <div className="bg-app-surface/90 border border-app-border rounded-xl px-5 py-4 shadow-2xl flex items-center gap-3">
-            <Loader2 className="w-5 h-5 animate-spin text-[#3b82f6]" />
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-app-text">Generating geometry</p>
-              <p className="text-[10px] text-app-text-muted mt-0.5">Building a renderable JSCAD solid...</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {renderError && !isProcessing && (
-        <div className="absolute inset-x-4 top-14 z-30 bg-red-500/10 border border-red-500/30 text-red-200 rounded-xl p-4 shadow-2xl backdrop-blur-md">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-black uppercase tracking-widest text-red-300">Render failed</p>
-              <p className="text-[11px] leading-relaxed mt-1 text-red-100/90 break-words">{renderError}</p>
-              {onRepair && (
-                <button
-                  onClick={onRepair}
-                  className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-100 text-[10px] font-black uppercase tracking-widest transition-all"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Repair model
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      <div className="absolute bottom-3 right-3 z-10 flex flex-col items-end gap-2 translate-y-1 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200">
-         <div className="bg-app-surface/80 backdrop-blur-sm p-1 rounded-md border border-app-border flex gap-1 shadow-2xl">
-            <button 
-              onClick={onExportStl}
-              disabled={!jscadCode || !!renderError}
-              className="p-2 hover:bg-app-surface-hover rounded-md transition-all text-app-text-dim disabled:opacity-30"
-              title="Export STL"
-            >
-              <Download className="w-3.5 h-3.5" />
-            </button>
-            <button 
-              onClick={onExportScad}
-              disabled={!jscadCode}
-              className="p-2 hover:bg-app-surface-hover rounded-md transition-all text-app-text-dim disabled:opacity-30"
-              title="Export SCAD"
-            >
-              <CodeIcon className="w-3.5 h-3.5" />
-            </button>
-            <button 
-              onClick={toggleGrid}
-              className={`p-2 rounded-md transition-all ${showGrid ? 'bg-[#3b82f6] text-white' : 'hover:bg-app-surface-hover text-app-text-dim'}`}
-              title="Toggle Grid"
-            >
-              <BoxSelect className="w-3.5 h-3.5" />
-            </button>
-            <button className="p-2 hover:bg-app-surface-hover rounded-md transition-all text-app-text-dim" title="Maximize">
-              <Maximize2 className="w-3.5 h-3.5" />
-            </button>
-         </div>
-      </div>
-
-      <Canvas shadows>
-        <PerspectiveCamera makeDefault position={[15, 15, 15]} fov={45} />
-        <Suspense fallback={null}>
-          <Stage environment="city" intensity={0.2} shadows="contact">
-            <ModelPlaceholder jscadCode={jscadCode} modelParams={modelParams} onError={onError} />
-          </Stage>
-        </Suspense>
-        <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 1.75} />
-        {showGrid && (
-          <Grid 
-            infiniteGrid 
-            cellSize={2} 
-            sectionSize={10} 
-            sectionColor="#1e232d" 
-            cellColor="#0a0c10"
-            fadeDistance={50}
-            fadeStrength={3}
-          />
-        )}
-        <Environment preset="night" />
-      </Canvas>
-    </div>
-  );
-}
-
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -270,6 +126,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [isDesktopInspector, setIsDesktopInspector] = useState(false);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('3d_architect_theme');
@@ -279,6 +136,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('3d_architect_theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1280px)');
+    const update = () => setIsDesktopInspector(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -526,6 +391,7 @@ export default function App() {
 
     try {
       setLoadingStep(t.generating || 'Thinking...');
+      const { geminiService } = await import('./services/geminiService');
       const response = await geminiService.generate3DCode([...messages, newUserMessage], selectedModel);
       
       if (!response) throw new Error("Empty response from AI.");
@@ -666,38 +532,38 @@ ${currentJscad}
   };
 
   return (
-    <div className={`flex h-screen bg-app-bg text-app-text-dim ${language === 'km' ? 'font-khmer' : 'font-sans'} overflow-hidden select-none ${theme === 'light' ? 'light' : ''}`}>
+    <div className={`flex h-dvh bg-app-bg text-app-text-dim ${language === 'km' ? 'font-khmer' : 'font-sans'} overflow-hidden select-none ${theme === 'light' ? 'light' : ''}`}>
        {/* Slim Tool Sidebar */}
-       <div className="w-16 border-r border-app-border flex flex-col items-center py-6 bg-app-bg gap-8 shrink-0">
-          <div className="p-2.5 bg-[#3b82f6] rounded-xl shadow-lg shadow-blue-500/20">
-             <Box className="w-6 h-6 text-white" />
+       <div className="flex w-12 sm:w-16 border-r border-app-border flex-col items-center py-3 sm:py-6 bg-app-bg gap-4 sm:gap-8 shrink-0">
+          <div className="p-2 sm:p-2.5 bg-[#3b82f6] rounded-xl shadow-lg shadow-blue-500/20">
+             <Box className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
           </div>
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2 sm:gap-4">
              <button 
                onClick={() => setExpandedCategory(expandedCategory ? null : PART_LIBRARY[0].category)}
-               className={`p-3 rounded-xl transition-all ${expandedCategory ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
+               className={`p-2.5 sm:p-3 rounded-xl transition-all ${expandedCategory ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
                title="Components Library"
              >
-               <Layers className="w-6 h-6" />
+               <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
              </button>
              <button 
                onClick={() => setShowShortcuts(!showShortcuts)}
-               className={`p-3 rounded-xl transition-all ${showShortcuts ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
+               className={`p-2.5 sm:p-3 rounded-xl transition-all ${showShortcuts ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
                title="Keyboard Shortcuts"
              >
-               <Command className="w-6 h-6" />
+               <Command className="w-5 h-5 sm:w-6 sm:h-6" />
              </button>
              <button 
                onClick={() => setShowSettings(true)}
-               className={`p-3 rounded-xl transition-all ${showSettings ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
+               className={`p-2.5 sm:p-3 rounded-xl transition-all ${showSettings ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
                title="System Settings"
              >
-               <Settings className="w-6 h-6" />
+               <Settings className="w-5 h-5 sm:w-6 sm:h-6" />
              </button>
           </div>
-          <div className="mt-auto flex flex-col gap-4">
-             <button className="p-3 rounded-xl hover:bg-app-surface text-app-text-muted hover:text-app-text transition-all"><HelpCircle className="w-6 h-6" /></button>
-             <div className="w-8 h-8 rounded-full bg-[#3b82f6] flex items-center justify-center text-white text-[10px] font-bold">MK</div>
+          <div className="mt-auto flex flex-col gap-2 sm:gap-4">
+             <button className="p-2.5 sm:p-3 rounded-xl hover:bg-app-surface text-app-text-muted hover:text-app-text transition-all"><HelpCircle className="w-5 h-5 sm:w-6 sm:h-6" /></button>
+             <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#3b82f6] flex items-center justify-center text-white text-[9px] sm:text-[10px] font-bold">MK</div>
           </div>
        </div>
 
@@ -763,16 +629,67 @@ ${currentJscad}
         </div>
       </div>
 
+      <AnimatePresence>
+        {expandedCategory && (
+          <motion.div
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -16 }}
+            className="lg:hidden fixed left-12 top-0 bottom-0 z-40 w-[min(320px,calc(100vw-3rem))] bg-app-bg border-r border-app-border shadow-2xl overflow-y-auto custom-scrollbar"
+          >
+            <div className="p-4 border-b border-app-border flex items-center justify-between">
+              <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-app-text-muted">{t.library}</h2>
+              <button onClick={() => setExpandedCategory(null)} className="p-2 rounded-lg text-app-text-muted hover:text-app-text hover:bg-app-surface">
+                <Trash2 className="w-4 h-4 rotate-45" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              {PART_LIBRARY.map((entry, i) => (
+                <div key={i} className="rounded-xl border border-app-border bg-app-surface overflow-hidden">
+                  <button
+                    onClick={() => setExpandedCategory(expandedCategory === entry.category ? PART_LIBRARY[0].category : entry.category)}
+                    className="w-full flex items-center gap-3 p-4 text-left"
+                  >
+                    <div className={`p-2 rounded-lg ${entry.color}`}>
+                      {entry.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-bold text-app-text truncate">{entry.category}</p>
+                      <p className="text-[9px] text-app-text-muted mt-0.5">{entry.prompts.length} Modules</p>
+                    </div>
+                    <ChevronRight className={`w-3.5 h-3.5 transition-transform text-app-text-muted ${expandedCategory === entry.category ? 'rotate-90' : ''}`} />
+                  </button>
+                  {expandedCategory === entry.category && (
+                    <div className="px-3 pb-3 space-y-1">
+                      {entry.prompts.map((p, j) => (
+                        <button
+                          key={j}
+                          onClick={() => { setExpandedCategory(null); setInput(p.prompt); handleSend(p.prompt); }}
+                          className="w-full text-left px-3 py-2 rounded-lg hover:bg-app-surface-hover group flex items-center gap-2 transition-all"
+                        >
+                          <div className="w-1 h-1 rounded-full bg-app-border group-hover:bg-[#3b82f6]" />
+                          <span className="text-[11px] font-medium text-app-text-muted group-hover:text-app-text transition-colors">{p.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Workspace Area */}
       <div className="flex-1 flex flex-col min-w-0 bg-app-bg relative">
-        <header className="h-14 border-b border-app-border flex items-center justify-between px-6 shrink-0 bg-app-bg z-20">
-           <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
+        <header className="min-h-14 border-b border-app-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-6 py-2 sm:py-0 shrink-0 bg-app-bg z-20">
+           <div className="flex w-full sm:w-auto min-w-0 items-center gap-2 sm:gap-6 flex-wrap sm:flex-nowrap">
+              <div className="flex items-center gap-2 min-w-0">
                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                 <h1 className={`font-black text-sm tracking-widest text-app-text uppercase ${language === 'km' ? 'font-khmer-title' : 'font-sans'}`}>Untitled Design_v1.4</h1>
+                 <h1 className={`font-black text-xs sm:text-sm tracking-widest text-app-text uppercase truncate max-w-[150px] sm:max-w-none ${language === 'km' ? 'font-khmer-title' : 'font-sans'}`}>Untitled Design_v1.4</h1>
               </div>
 
-              <div className="flex items-center gap-1 border-l border-r border-app-border px-4 h-8">
+              <div className="flex items-center gap-1 border-l border-r border-app-border px-2 sm:px-4 h-8">
                  <button 
                   onClick={handleUndo}
                   disabled={historyIndex <= 0}
@@ -791,7 +708,7 @@ ${currentJscad}
                  </button>
               </div>
 
-              <div className="flex items-center gap-1 bg-app-surface p-1 rounded-lg">
+              <div className="order-3 sm:order-none w-full sm:w-auto flex items-center gap-1 bg-app-surface p-1 rounded-lg overflow-x-auto scrollbar-hide">
                 {[
                   { id: '3d', label: language === 'km' ? '3D' : '3D View' },
                   { id: 'chat', label: language === 'km' ? 'ជជែក' : 'Chat' },
@@ -802,7 +719,7 @@ ${currentJscad}
                   <button 
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as any)}
-                    className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === tab.id ? 'bg-[#3b82f6] text-white shadow-sm border border-[#3b82f6]' : 'text-app-text-muted hover:text-app-text-dim'}`}
+                    className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === tab.id ? 'bg-[#3b82f6] text-white shadow-sm border border-[#3b82f6]' : 'text-app-text-muted hover:text-app-text-dim'}`}
                   >
                     {tab.label}
                   </button>
@@ -810,7 +727,7 @@ ${currentJscad}
               </div>
            </div>
            
-           <div className="flex items-center gap-3">
+           <div className="flex w-full sm:w-auto items-center justify-end gap-2 sm:gap-3 overflow-x-auto scrollbar-hide">
               <button 
                 onClick={() => setShowSavedList(true)}
                 className="p-2 rounded-lg hover:bg-app-surface text-app-text-muted hover:text-app-text transition-all"
@@ -829,18 +746,18 @@ ${currentJscad}
               <button 
                 onClick={exportScad}
                 disabled={!currentScad}
-                className="flex items-center gap-2 bg-app-surface hover:bg-app-surface-hover disabled:opacity-20 text-app-text-dim px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border border-app-border"
+                className="flex items-center gap-2 bg-app-surface hover:bg-app-surface-hover disabled:opacity-20 text-app-text-dim px-3 sm:px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border border-app-border shrink-0"
               >
                  <CodeIcon className="w-4 h-4" />
-                 SCAD
+                 <span className="hidden sm:inline">SCAD</span>
               </button>
               <button 
                 onClick={exportStl} 
                 disabled={!currentJscad}
-                className="flex items-center gap-2 bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-20 text-black px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all hover:scale-105"
+                className="flex items-center gap-2 bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-20 text-black px-3 sm:px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all hover:scale-105 shrink-0"
               >
                  <Download className="w-4 h-4" />
-                 STL
+                 <span className="hidden sm:inline">STL</span>
               </button>
            </div>
         </header>
@@ -849,23 +766,25 @@ ${currentJscad}
            <div className="flex-1 relative">
              {/* Large Central Canvas */}
              <div className="h-full w-full">
-                {activeTab === '3d' ? (
-                   <Preview3D 
-                    isProcessing={isLoading} 
-                    jscadCode={currentJscad} 
-                    modelParams={modelParams}
-                    onExportStl={exportStl} 
-                    onExportScad={exportScad}
-                    showGrid={showGrid}
-                     toggleGrid={() => setShowGrid(!showGrid)}
-                     renderError={renderError} 
-                     onError={setRenderError} 
-                     onRepair={handleRepairModel}
-                     t={t}
-                   />
+                 {activeTab === '3d' ? (
+                   <Suspense fallback={<PreviewFallback />}>
+                     <Preview3D 
+                      isProcessing={isLoading} 
+                      jscadCode={currentJscad} 
+                      modelParams={modelParams}
+                      onExportStl={exportStl} 
+                      onExportScad={exportScad}
+                      showGrid={showGrid}
+                       toggleGrid={() => setShowGrid(!showGrid)}
+                       renderError={renderError} 
+                       onError={setRenderError} 
+                       onRepair={handleRepairModel}
+                       t={t}
+                     />
+                   </Suspense>
                 ) : activeTab === 'chat' ? (
-                   <div className="h-full overflow-y-auto bg-app-bg custom-scrollbar p-8 relative" onScroll={handleScroll}>
-                      <div className="max-w-3xl mx-auto space-y-8 pb-32">
+                   <div className="h-full overflow-y-auto bg-app-bg custom-scrollbar p-4 sm:p-8 relative" onScroll={handleScroll}>
+                      <div className="max-w-3xl mx-auto space-y-6 sm:space-y-8 pb-36 sm:pb-32">
                          {messages.length === 0 && !isLoading && (
                             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="pt-10">
                               <div className="mb-8">
@@ -873,7 +792,7 @@ ${currentJscad}
                                   <Sparkles className="w-3.5 h-3.5" />
                                   AI CAD workspace
                                 </div>
-                                <h2 className="text-3xl font-black tracking-tight text-app-text">Generate precise 3D parts from plain language.</h2>
+                                <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-app-text">Generate precise 3D parts from plain language.</h2>
                                 <p className="text-app-text-muted text-sm mt-3 max-w-xl leading-relaxed">Start with a mechanical part, enclosure, mount, or upload a reference image. The app will generate editable JSCAD, parameters, and a live 3D preview.</p>
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -895,9 +814,9 @@ ${currentJscad}
                          )}
                          {messages.map((m, i) => (
                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                               <div className={`p-6 rounded-2xl max-w-[85%] text-[14px] leading-relaxed border shadow-2xl ${m.role === 'user' ? 'bg-[#3b82f6] border-[#2563eb] text-white font-medium' : 'bg-app-surface border-app-border text-app-text-dim'}`}>
+                               <div className={`p-4 sm:p-6 rounded-2xl max-w-[92%] sm:max-w-[85%] text-[13px] sm:text-[14px] leading-relaxed border shadow-2xl ${m.role === 'user' ? 'bg-[#3b82f6] border-[#2563eb] text-white font-medium' : 'bg-app-surface border-app-border text-app-text-dim'}`}>
                                   <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-sm`}>
-                                    <ReactMarkdown>{m.parts.map(p => p.text).join('')}</ReactMarkdown>
+                                    <MarkdownView>{m.parts.map(p => p.text).join('')}</MarkdownView>
                                   </div>
                                </div>
                             </motion.div>
@@ -940,20 +859,20 @@ ${currentJscad}
                      </AnimatePresence>
                   </div>
                 ) : activeTab === 'engine' ? (
-                   <div className="h-full bg-app-bg p-10 font-mono text-[13px] overflow-auto text-app-text selection:bg-[#264f78] custom-scrollbar">
+                    <div className="h-full bg-app-bg p-4 sm:p-10 font-mono text-[12px] sm:text-[13px] overflow-auto text-app-text selection:bg-[#264f78] custom-scrollbar">
                       <pre><code>{currentJscad || '// NO DESIGN DATA GENERATED'}</code></pre>
                    </div>
                  ) : activeTab === 'blueprint' ? (
-                   <div className="h-full p-8 overflow-y-auto custom-scrollbar bg-app-bg">
+                   <div className="h-full p-4 sm:p-8 overflow-y-auto custom-scrollbar bg-app-bg">
                       <div className="max-w-3xl mx-auto pb-32">
                          <div className="flex items-center gap-4 mb-8">
                             <Layers className="w-6 h-6 text-[#3b82f6]" />
                             <h2 className="text-xl font-black text-app-text uppercase tracking-tight">{language === 'km' ? 'ប្លង់មេ និងការវិភាគ' : 'Blueprint & Analysis'}</h2>
                          </div>
-                         <div className="bg-app-surface border border-app-border p-8 rounded-2xl text-[14px] leading-relaxed text-app-text-dim shadow-2xl">
+                          <div className="bg-app-surface border border-app-border p-5 sm:p-8 rounded-2xl text-[13px] sm:text-[14px] leading-relaxed text-app-text-dim shadow-2xl">
                             {designAnalysis ? (
                                <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-sm`}>
-                                  <ReactMarkdown>{designAnalysis}</ReactMarkdown>
+                                   <MarkdownView>{designAnalysis}</MarkdownView>
                                </div>
                             ) : (
                                <p className="italic text-app-text-muted">No active design analysis. Describe something in Chat to generate a blueprint.</p>
@@ -962,14 +881,14 @@ ${currentJscad}
                       </div>
                    </div>
                 ) : (
-                  <div className="h-full p-8 overflow-y-auto custom-scrollbar">
-                    <div className="max-w-3xl mx-auto pb-32">
+                  <div className="h-full p-4 sm:p-8 overflow-y-auto custom-scrollbar">
+                    <div className="max-w-3xl mx-auto pb-36 sm:pb-32">
                        <div className="flex items-center gap-4 mb-8">
                           <Settings className="w-6 h-6 text-[#3b82f6]" />
                           <h2 className="text-xl font-black text-app-text uppercase tracking-tight">{t.tweakerTitle}</h2>
                        </div>
                        {modelParamSpecs.length === 0 ? (
-                         <div className="bg-app-surface border border-app-border rounded-2xl p-10 text-center">
+                         <div className="bg-app-surface border border-app-border rounded-2xl p-6 sm:p-10 text-center">
                            <Settings className="w-8 h-8 text-app-text-muted mx-auto mb-4" />
                            <p className="text-[11px] font-black uppercase tracking-widest text-app-text">{t.noParams}</p>
                            <p className="text-[12px] text-app-text-muted mt-2">Generate a parametric model to unlock live sliders.</p>
@@ -993,12 +912,12 @@ ${currentJscad}
              </div>
 
              {/* Floating Bottom Prompt Bar */}
-             <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-2xl px-6 z-30">
-                <div className="bg-app-surface/80 backdrop-blur-2xl border border-app-border p-1.5 rounded-2xl shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] flex items-end gap-3 group focus-within:border-[#3b82f6] transition-all">
-                   <button onClick={() => fileInputRef.current?.click()} className="p-3 text-app-text-muted hover:text-[#3b82f6] transition-colors"><ImageIcon className="w-6 h-6" /></button>
+             <div className="absolute bottom-3 sm:bottom-10 left-1/2 -translate-x-1/2 w-full max-w-2xl px-3 sm:px-6 z-30">
+                <div className="bg-app-surface/90 sm:bg-app-surface/80 backdrop-blur-2xl border border-app-border p-1.5 rounded-xl sm:rounded-2xl shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] flex items-end gap-1.5 sm:gap-3 group focus-within:border-[#3b82f6] transition-all">
+                   <button onClick={() => fileInputRef.current?.click()} className="p-2.5 sm:p-3 text-app-text-muted hover:text-[#3b82f6] transition-colors shrink-0"><ImageIcon className="w-5 h-5 sm:w-6 sm:h-6" /></button>
                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
                    
-                   <div className="flex-1 pb-1">
+                   <div className="flex-1 pb-1 min-w-0">
                       {selectedImage && (
                         <div className="relative w-16 h-16 mb-2">
                            <img src={selectedImage} className="w-full h-full object-cover rounded-xl border border-app-border" />
@@ -1031,17 +950,18 @@ ${currentJscad}
                    <button 
                     onClick={() => handleSend()}
                     disabled={isLoading || (!input.trim() && !selectedImage)}
-                    className="bg-[#3b82f6] hover:bg-[#2563eb] text-white px-6 py-3 rounded-xl disabled:opacity-10 transition-all font-bold text-[12px] uppercase tracking-widest shadow-lg shadow-blue-900/30 active:scale-95 flex items-center gap-2"
+                    className="bg-[#3b82f6] hover:bg-[#2563eb] text-white px-3 sm:px-6 py-3 rounded-xl disabled:opacity-10 transition-all font-bold text-[12px] uppercase tracking-widest shadow-lg shadow-blue-900/30 active:scale-95 flex items-center gap-2 shrink-0"
                    >
                       {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                      Generate
+                      <span className="hidden sm:inline">Generate</span>
                    </button>
                 </div>
              </div>
            </div>
 
            {/* Right Panel: Global Inspector / Preview */}
-           <div className="w-[380px] bg-app-bg border-l border-app-border flex flex-col hidden xl:flex shrink-0">
+           {isDesktopInspector && (
+           <div className="w-[380px] bg-app-bg border-l border-app-border flex flex-col shrink-0">
               <div className="p-6 border-b border-app-border flex items-center justify-between">
                  <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-app-text-muted">Live Preview</h2>
                  <div className="flex gap-1.5 font-mono text-[9px] text-app-text-muted">
@@ -1052,19 +972,21 @@ ${currentJscad}
               </div>
               <div className="flex-1 p-4">
                  <div className="h-[280px] w-full rounded-2xl overflow-hidden border border-app-border bg-black shadow-inner">
-                    <Preview3D 
-                      isProcessing={isLoading} 
-                      jscadCode={currentJscad} 
-                      modelParams={modelParams}
-                      onExportStl={exportStl} 
-                      onExportScad={exportScad}
-                      showGrid={showGrid}
-                      toggleGrid={() => setShowGrid(!showGrid)}
-                      renderError={renderError} 
-                      onError={setRenderError} 
-                      onRepair={handleRepairModel}
-                      t={t}
-                    />
+                    <Suspense fallback={<PreviewFallback />}>
+                      <Preview3D 
+                        isProcessing={isLoading} 
+                        jscadCode={currentJscad} 
+                        modelParams={modelParams}
+                        onExportStl={exportStl} 
+                        onExportScad={exportScad}
+                        showGrid={showGrid}
+                        toggleGrid={() => setShowGrid(!showGrid)}
+                        renderError={renderError} 
+                        onError={setRenderError} 
+                        onRepair={handleRepairModel}
+                        t={t}
+                      />
+                    </Suspense>
                  </div>
 
                  <div className="mt-8 space-y-6">
@@ -1073,7 +995,7 @@ ${currentJscad}
                        <div className="bg-app-surface border border-app-border p-5 rounded-2xl text-[12px] leading-relaxed text-app-text-dim shadow-xl overflow-y-auto max-h-[300px] custom-scrollbar">
                           {designAnalysis ? (
                             <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-xs`}>
-                              <ReactMarkdown>{designAnalysis}</ReactMarkdown>
+                              <MarkdownView>{designAnalysis}</MarkdownView>
                             </div>
                           ) : (
                             <p className="italic text-app-text-muted">Generating structural request results...</p>
@@ -1094,6 +1016,7 @@ ${currentJscad}
                  </div>
               </div>
            </div>
+           )}
         </main>
        </div>
 
