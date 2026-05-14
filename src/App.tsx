@@ -39,7 +39,9 @@ import {
   Redo2,
   FolderOpen,
   Moon,
-  Sun
+  Sun,
+  AlertTriangle,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -128,7 +130,7 @@ function ModelPlaceholder({ jscadCode, modelParams, onError }: { jscadCode: stri
   );
 }
 
-function Preview3D({ isProcessing, jscadCode, modelParams, onExportStl, onExportScad, showGrid, toggleGrid, onError, renderError, t }: { 
+function Preview3D({ isProcessing, jscadCode, modelParams, onExportStl, onExportScad, showGrid, toggleGrid, onError, renderError, onRepair, t }: { 
   isProcessing: boolean; 
   jscadCode: string | null; 
   modelParams: any;
@@ -136,28 +138,85 @@ function Preview3D({ isProcessing, jscadCode, modelParams, onExportStl, onExport
   onExportScad?: () => void;
   showGrid: boolean;
   toggleGrid: () => void;
-  onError?: (err: string) => void; 
+  onError?: (err: string | null) => void; 
   renderError: string | null;
+  onRepair?: () => void;
   t: any;
 }) {
   return (
     <div className="w-full h-full bg-app-bg relative rounded-md overflow-hidden border border-app-border group">
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
-          <div className="bg-app-surface/60 backdrop-blur-md px-2.5 py-1 rounded-md border border-app-border flex items-center gap-2 shadow-xl">
+          <div className="bg-app-surface/70 backdrop-blur-md px-3 py-1.5 rounded-md border border-app-border flex items-center gap-2 shadow-xl">
             <div className={`w-1.5 h-1.5 rounded-full ${isProcessing ? 'bg-[#3b82f6] animate-pulse' : renderError ? 'bg-red-500' : 'bg-emerald-500'}`}></div>
             <span className="text-[9px] font-bold text-app-text-dim uppercase tracking-widest">
                {isProcessing ? t.processing : renderError ? 'Error' : t.ready}
             </span>
          </div>
-         {renderError && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-2 rounded-md text-[9px] font-bold max-w-[180px] backdrop-blur-sm">
-               {renderError}
-            </div>
-         )}
       </div>
+
+      {!jscadCode && !isProcessing && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+          <div className="text-center max-w-xs px-6">
+            <div className="w-12 h-12 rounded-xl border border-app-border bg-app-surface/80 backdrop-blur-md flex items-center justify-center mx-auto mb-4 shadow-xl">
+              <BoxSelect className="w-6 h-6 text-[#3b82f6]" />
+            </div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-app-text">Ready for a model</p>
+            <p className="text-[11px] text-app-text-muted mt-2 leading-relaxed">Describe a part below or choose a library preset.</p>
+          </div>
+        </div>
+      )}
+
+      {isProcessing && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-app-bg/45 backdrop-blur-[2px]">
+          <div className="bg-app-surface/90 border border-app-border rounded-xl px-5 py-4 shadow-2xl flex items-center gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-[#3b82f6]" />
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-app-text">Generating geometry</p>
+              <p className="text-[10px] text-app-text-muted mt-0.5">Building a renderable JSCAD solid...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {renderError && !isProcessing && (
+        <div className="absolute inset-x-4 top-14 z-30 bg-red-500/10 border border-red-500/30 text-red-200 rounded-xl p-4 shadow-2xl backdrop-blur-md">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-black uppercase tracking-widest text-red-300">Render failed</p>
+              <p className="text-[11px] leading-relaxed mt-1 text-red-100/90 break-words">{renderError}</p>
+              {onRepair && (
+                <button
+                  onClick={onRepair}
+                  className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-100 text-[10px] font-black uppercase tracking-widest transition-all"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Repair model
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       
       <div className="absolute bottom-3 right-3 z-10 flex flex-col items-end gap-2 translate-y-1 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200">
          <div className="bg-app-surface/80 backdrop-blur-sm p-1 rounded-md border border-app-border flex gap-1 shadow-2xl">
+            <button 
+              onClick={onExportStl}
+              disabled={!jscadCode || !!renderError}
+              className="p-2 hover:bg-app-surface-hover rounded-md transition-all text-app-text-dim disabled:opacity-30"
+              title="Export STL"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+            <button 
+              onClick={onExportScad}
+              disabled={!jscadCode}
+              className="p-2 hover:bg-app-surface-hover rounded-md transition-all text-app-text-dim disabled:opacity-30"
+              title="Export SCAD"
+            >
+              <CodeIcon className="w-3.5 h-3.5" />
+            </button>
             <button 
               onClick={toggleGrid}
               className={`p-2 rounded-md transition-all ${showGrid ? 'bg-[#3b82f6] text-white' : 'hover:bg-app-surface-hover text-app-text-dim'}`}
@@ -223,6 +282,7 @@ export default function App() {
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState<string>('');
   const [modelParams, setModelParams] = useState<Record<string, any>>({});
   const [modelParamSpecs, setModelParamSpecs] = useState<any[]>([]);
@@ -438,6 +498,7 @@ export default function App() {
     if (!textToSend.trim() && !selectedImage) return;
 
     setRenderError(null);
+    setGenerationError(null);
     const newParts: any[] = [];
     if (textToSend.trim()) {
       const languageInstruction = language === 'km' ? "កំណត់សម្គាល់៖ សូមឆ្លើយតបជាភាសាខ្មែរ ចំពោះការវិភាគ និងការពន្យល់។\n\n" : "";
@@ -476,14 +537,14 @@ export default function App() {
       setMessages(prev => [...prev, assistantMessage]);
       
       // Extract code
-      const scadMatch = response.match(/```scad([\s\S]*?)```/);
+      const scadMatch = response.match(/```scad([\s\S]*?)```/i);
       if (scadMatch) setCurrentScad(scadMatch[1].trim());
 
-      const jscadMatch = response.match(/```jscad([\s\S]*?)```/);
+      const jscadMatch = response.match(/```(?:jscad|javascript|js)([\s\S]*?)```/i);
       if (jscadMatch) setCurrentJscad(jscadMatch[1].trim());
 
       // Extract parameters
-      const paramsMatch = response.match(/```json([\s\S]*?)```/);
+      const paramsMatch = response.match(/```json([\s\S]*?)```/i);
       if (paramsMatch) {
          try {
             const specs = JSON.parse(paramsMatch[1].trim());
@@ -518,11 +579,33 @@ export default function App() {
       
     } catch (error: any) {
       console.error(error);
-      alert(`Error: ${error?.message || 'Failed to generate model'}`);
+      setGenerationError(error?.message || 'Failed to generate model');
+      setActiveTab('chat');
     } finally {
       setIsLoading(false);
       setLoadingStep('');
     }
+  };
+
+  const handleRepairModel = () => {
+    if (!currentJscad || isLoading) return;
+    const repairPrompt = `The current JSCAD failed to render with this error: ${renderError || 'unknown render error'}.
+
+Rewrite the design as valid JSCAD V2 using @jscad/modeling. Return a complete response with a short design analysis, a JSON parameters block, a SCAD block, and a JSCAD block. The JSCAD main function must be export const main = (params = {}) => { ... } and it must return a valid 3D solid.
+
+Current broken JSCAD:
+\`\`\`jscad
+${currentJscad}
+\`\`\``;
+    handleSend(repairPrompt);
+  };
+
+  const handleRerender = () => {
+    if (!currentJscad) return;
+    const code = currentJscad;
+    setRenderError(null);
+    setCurrentJscad(null);
+    requestAnimationFrame(() => setCurrentJscad(code));
   };
 
   const exportStl = async () => {
@@ -533,24 +616,29 @@ export default function App() {
       
       const serialize = jscadStlSerializer.serialize;
       
-      const script = `
-        const require = (pkg) => pkg === '@jscad/modeling' ? modeling : {};
-        const exports = {};
+        const script = `
+        var require = (pkg) => pkg === '@jscad/modeling' ? modeling : {};
+        var module = { exports: {} };
+        var exports = module.exports;
+        var { primitives, extrusions, transforms, booleans, colors, expansions, geometries, hulls, measurements, mathematics, utils } = modeling;
         ${currentJscad
-          .replace(/import\s+\{(.*)\}\s+from\s+['"]@jscad\/modeling['"]/g, 'const {$1} = modeling')
-          .replace(/import\s+(.*)\s+from\s+['"]@jscad\/modeling['"]/g, 'const $1 = modeling')
-          .replace(/import\s+.*from\s+['"].*['"]/g, '')
-          .replace(/export\s+default\s+/g, '')
-          .replace(/export\s+const\s+/g, 'const ')
-          .replace(/export\s+function\s+/g, 'function ')
-          .replace(/export\s+\{(.*)\}/g, ' ')
+          .replace(/import\s+[\s\S]*?from\s+['"].*?['"];?/g, '')
+          .replace(/\bmodule\.exports\s*=\s*\{\s*main\s*\};?/g, 'exports.main = main;')
+          .replace(/\bexport\s+default\s+/g, 'var defaultExport = ')
+          .replace(/\bexport\s+(const|let|var)\s+/g, 'var ')
+          .replace(/\bexport\s+function\s+/g, 'function ')
+          .replace(/\bexport\s+class\s+/g, 'class ')
+          .replace(/\bexport\s+\{[\s\S]*?\};?/g, '')
+          .replace(/\bconst\b/g, 'var')
+          .replace(/\blet\b/g, 'var')
         }
-        const finalMain = typeof main !== 'undefined' ? main : (typeof exports.main !== 'undefined' ? exports.main : (typeof exports.default !== 'undefined' ? exports.default : null));
-        return finalMain(modeling);
+        var finalMain = typeof main !== 'undefined' ? main : (typeof defaultExport !== 'undefined' ? defaultExport : (typeof exports.main !== 'undefined' ? exports.main : (typeof module.exports === 'function' ? module.exports : (typeof module.exports.main !== 'undefined' ? module.exports.main : (typeof exports.default !== 'undefined' ? exports.default : null)))));
+        if (typeof finalMain !== 'function') throw new Error('JSCAD main function not found');
+        return finalMain.length >= 2 ? finalMain(modeling, modelParams) : finalMain(modelParams);
       `;
 
-      const mainFunc = new Function('modeling', script);
-      const result = mainFunc(mod);
+      const mainFunc = new Function('modeling', 'modelParams', script);
+      const result = mainFunc(mod, modelParams);
       
       const rawData = serialize({ binary: true }, result);
       const blob = new Blob(rawData, { type: 'application/sla' });
@@ -769,25 +857,66 @@ export default function App() {
                     onExportStl={exportStl} 
                     onExportScad={exportScad}
                     showGrid={showGrid}
-                    toggleGrid={() => setShowGrid(!showGrid)}
-                    renderError={renderError} 
-                    onError={setRenderError} 
-                    t={t}
-                  />
+                     toggleGrid={() => setShowGrid(!showGrid)}
+                     renderError={renderError} 
+                     onError={setRenderError} 
+                     onRepair={handleRepairModel}
+                     t={t}
+                   />
                 ) : activeTab === 'chat' ? (
-                  <div className="h-full overflow-y-auto bg-app-bg custom-scrollbar p-8 relative" onScroll={handleScroll}>
-                     <div className="max-w-3xl mx-auto space-y-8 pb-32">
-                        {messages.map((m, i) => (
-                           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`p-6 rounded-2xl max-w-[85%] text-[14px] leading-relaxed border shadow-2xl ${m.role === 'user' ? 'bg-[#3b82f6] border-[#2563eb] text-white font-medium' : 'bg-app-surface border-app-border text-app-text-dim'}`}>
-                                 <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-sm`}>
-                                   <ReactMarkdown>{m.parts.map(p => p.text).join('')}</ReactMarkdown>
-                                 </div>
+                   <div className="h-full overflow-y-auto bg-app-bg custom-scrollbar p-8 relative" onScroll={handleScroll}>
+                      <div className="max-w-3xl mx-auto space-y-8 pb-32">
+                         {messages.length === 0 && !isLoading && (
+                            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="pt-10">
+                              <div className="mb-8">
+                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-app-surface border border-app-border text-[10px] font-black uppercase tracking-widest text-[#3b82f6] mb-5">
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  AI CAD workspace
+                                </div>
+                                <h2 className="text-3xl font-black tracking-tight text-app-text">Generate precise 3D parts from plain language.</h2>
+                                <p className="text-app-text-muted text-sm mt-3 max-w-xl leading-relaxed">Start with a mechanical part, enclosure, mount, or upload a reference image. The app will generate editable JSCAD, parameters, and a live 3D preview.</p>
                               </div>
-                           </motion.div>
-                        ))}
-                        {isLoading && (
-                           <div className="flex justify-start">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {[
+                                  'A wall-mounted enclosure with screw holes and a snap-fit lid',
+                                  'A reinforced L bracket with countersunk holes',
+                                  'A 608 bearing block with mounting slots'
+                                ].map(example => (
+                                  <button
+                                    key={example}
+                                    onClick={() => handleSend(example)}
+                                    className="text-left p-4 rounded-xl bg-app-surface border border-app-border hover:border-[#3b82f6]/50 hover:bg-app-surface-hover transition-all group"
+                                  >
+                                    <p className="text-[11px] font-bold leading-relaxed text-app-text-dim group-hover:text-app-text">{example}</p>
+                                  </button>
+                                ))}
+                              </div>
+                            </motion.div>
+                         )}
+                         {messages.map((m, i) => (
+                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                               <div className={`p-6 rounded-2xl max-w-[85%] text-[14px] leading-relaxed border shadow-2xl ${m.role === 'user' ? 'bg-[#3b82f6] border-[#2563eb] text-white font-medium' : 'bg-app-surface border-app-border text-app-text-dim'}`}>
+                                  <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-sm`}>
+                                    <ReactMarkdown>{m.parts.map(p => p.text).join('')}</ReactMarkdown>
+                                  </div>
+                               </div>
+                            </motion.div>
+                         ))}
+                         {generationError && (
+                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
+                               <div className="max-w-[85%] bg-red-500/10 border border-red-500/25 rounded-2xl p-5 shadow-2xl">
+                                  <div className="flex items-start gap-3">
+                                     <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                                     <div>
+                                       <p className="text-[10px] font-black uppercase tracking-widest text-red-300">Generation failed</p>
+                                       <p className="text-[13px] text-red-100/90 mt-1 leading-relaxed">{generationError}</p>
+                                     </div>
+                                  </div>
+                               </div>
+                            </motion.div>
+                         )}
+                         {isLoading && (
+                            <div className="flex justify-start">
                               <div className="bg-app-surface border border-app-border rounded-2xl p-4 flex items-center gap-4 animate-pulse shadow-2xl">
                                  <Loader2 className="w-4 h-4 animate-spin text-[#3b82f6]" />
                                  <span className="text-[12px] font-bold text-app-text-muted uppercase tracking-widest">{loadingStep}</span>
@@ -839,7 +968,14 @@ export default function App() {
                           <Settings className="w-6 h-6 text-[#3b82f6]" />
                           <h2 className="text-xl font-black text-app-text uppercase tracking-tight">{t.tweakerTitle}</h2>
                        </div>
-                       <div className="grid grid-cols-2 gap-4">
+                       {modelParamSpecs.length === 0 ? (
+                         <div className="bg-app-surface border border-app-border rounded-2xl p-10 text-center">
+                           <Settings className="w-8 h-8 text-app-text-muted mx-auto mb-4" />
+                           <p className="text-[11px] font-black uppercase tracking-widest text-app-text">{t.noParams}</p>
+                           <p className="text-[12px] text-app-text-muted mt-2">Generate a parametric model to unlock live sliders.</p>
+                         </div>
+                       ) : (
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {modelParamSpecs.map((spec, i) => (
                              <div key={i} className="p-6 bg-app-surface rounded-2xl border border-app-border hover:border-[#3b82f6]/30 transition-all">
                                 <div className="flex justify-between mb-4">
@@ -850,6 +986,7 @@ export default function App() {
                              </div>
                           ))}
                        </div>
+                       )}
                     </div>
                   </div>
                 )}
@@ -925,6 +1062,7 @@ export default function App() {
                       toggleGrid={() => setShowGrid(!showGrid)}
                       renderError={renderError} 
                       onError={setRenderError} 
+                      onRepair={handleRepairModel}
                       t={t}
                     />
                  </div>
@@ -944,11 +1082,11 @@ export default function App() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                       <button className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-app-surface border border-app-border hover:border-[#3b82f6]/40 transition-all">
+                       <button onClick={() => setActiveTab('3d')} className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-app-surface border border-app-border hover:border-[#3b82f6]/40 transition-all">
                           <Monitor className="w-5 h-5 text-[#3b82f6]" />
                           <span className="text-[9px] font-bold uppercase text-app-text-muted">Fullscreen</span>
                        </button>
-                       <button className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-app-surface border border-app-border hover:border-[#3b82f6]/40 transition-all">
+                       <button onClick={handleRerender} disabled={!currentJscad} className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-app-surface border border-app-border hover:border-[#3b82f6]/40 transition-all disabled:opacity-30">
                           <RefreshCw className="w-5 h-5 text-amber-500" />
                           <span className="text-[9px] font-bold uppercase text-app-text-muted">Re-render</span>
                        </button>
@@ -1141,4 +1279,3 @@ export default function App() {
     </div>
   );
 }
-

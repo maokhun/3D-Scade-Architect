@@ -1,11 +1,11 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import * as modeling from '@jscad/modeling';
 
 interface JscadRendererProps {
   jscadCode: string | null;
   modelParams?: Record<string, any>;
-  onError?: (error: string) => void;
+  onError?: (error: string | null) => void;
 }
 
 export function JscadRenderer({ jscadCode, modelParams = {}, onError }: JscadRendererProps) {
@@ -23,7 +23,7 @@ export function JscadRenderer({ jscadCode, modelParams = {}, onError }: JscadRen
       const positiveKeys = [
         'size', 'radius', 'height', 'width', 'length', 
         'radiusStart', 'radiusEnd', 'innerRadius', 'outerRadius', 
-        'roundRadius', 'thickness', 'depth'
+        'roundRadius', 'thickness', 'depth', 'diameter'
       ];
 
       const sanitizeOptions = (obj: any): any => {
@@ -78,9 +78,8 @@ export function JscadRenderer({ jscadCode, modelParams = {}, onError }: JscadRen
                 return original(...sanitizedArgs);
               } catch (e) {
                 console.warn(`JSCAD Error in ${key}:`, e);
-                // Return identity/empty if it fails
                 if (key === 'union' || key === 'subtract' || key === 'intersect') return args[0];
-                return modeling.primitives.cube({ size: 0.001 });
+                throw e;
               }
             };
           } else if (typeof original === 'object' && original !== null) {
@@ -94,17 +93,19 @@ export function JscadRenderer({ jscadCode, modelParams = {}, onError }: JscadRen
 
       const wrappedModeling = wrapSubObject(modeling);
 
-      // We need to extract the main function and execute it
-      // The AI is instructed to use require and export { main }
+      // Evaluate generated JSCAD in a small compatibility wrapper.
+      // Most generated code uses main(params), but older snippets may use main(modeling, params).
       const script = `
         var require = (pkg) => pkg === '@jscad/modeling' ? modeling : {};
-        var exports = {};
+        var module = { exports: {} };
+        var exports = module.exports;
         
         // Expose top-level namespaces to avoid need for imports
         var { primitives, extrusions, transforms, booleans, colors, expansions, geometries, hulls, measurements, mathematics, utils } = modeling;
 
         ${jscadCode
           .replace(/import\s+[\s\S]*?from\s+['"].*?['"];?/g, '')
+          .replace(/\bmodule\.exports\s*=\s*\{\s*main\s*\};?/g, 'exports.main = main;')
           .replace(/\bexport\s+default\s+/g, 'var defaultExport = ')
           .replace(/\bexport\s+(const|let|var)\s+/g, 'var ')
           .replace(/\bexport\s+function\s+/g, 'function ')
@@ -113,16 +114,15 @@ export function JscadRenderer({ jscadCode, modelParams = {}, onError }: JscadRen
           .replace(/\bconst\b/g, 'var')
           .replace(/\blet\b/g, 'var')
         }
-        var finalMain = typeof main !== 'undefined' ? main : (typeof defaultExport !== 'undefined' ? defaultExport : (typeof exports.main !== 'undefined' ? exports.main : (typeof exports.default !== 'undefined' ? exports.default : null)));
+        var finalMain = typeof main !== 'undefined' ? main : (typeof defaultExport !== 'undefined' ? defaultExport : (typeof exports.main !== 'undefined' ? exports.main : (typeof module.exports === 'function' ? module.exports : (typeof module.exports.main !== 'undefined' ? module.exports.main : (typeof exports.default !== 'undefined' ? exports.default : null)))));
         if (typeof finalMain !== 'function') throw new Error('JSCAD main function not found');
-        return finalMain(modeling, modelParams);
+        return finalMain.length >= 2 ? finalMain(modeling, modelParams) : finalMain(modelParams);
       `;
 
       const mainFunc = new Function('modeling', 'modelParams', script);
       const result = mainFunc(wrappedModeling, modelParams);
 
       if (result) {
-        setError(null);
         const geometries = Array.isArray(result) ? result : [result];
         const combinedGeometry = new THREE.BufferGeometry();
         
@@ -155,8 +155,16 @@ export function JscadRenderer({ jscadCode, modelParams = {}, onError }: JscadRen
           }
         });
 
+        if (allPositions.length === 0) {
+          throw new Error('Generated JSCAD did not return a 3D solid.');
+        }
+
         combinedGeometry.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
         combinedGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(allNormals, 3));
+        combinedGeometry.computeBoundingBox();
+        combinedGeometry.computeBoundingSphere();
+        setError(null);
+        if (onError) onError(null);
         setGeometry(combinedGeometry);
       }
     } catch (err: any) {
@@ -166,15 +174,10 @@ export function JscadRenderer({ jscadCode, modelParams = {}, onError }: JscadRen
       if (onError) onError(msg);
       setGeometry(null);
     }
-  }, [jscadCode, onError]);
+  }, [jscadCode, modelParams, onError]);
 
   if (!geometry) {
-    return (
-      <mesh>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="#333" wireframe opacity={0.2} transparent />
-      </mesh>
-    );
+    return null;
   }
 
   return (
