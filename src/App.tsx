@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { ChatMessage } from './services/geminiService';
+import { executeJscad } from './utils/jscadExecutor';
 
 const Preview3D = lazy(() => import('./components/Preview3D'));
 const ReactMarkdown = lazy(() => import('react-markdown'));
@@ -148,6 +149,7 @@ export default function App() {
   const [showGrid, setShowGrid] = useState(true);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState<string>('');
   const [modelParams, setModelParams] = useState<Record<string, any>>({});
   const [modelParamSpecs, setModelParamSpecs] = useState<any[]>([]);
@@ -364,6 +366,7 @@ export default function App() {
 
     setRenderError(null);
     setGenerationError(null);
+    setExportError(null);
     const newParts: any[] = [];
     if (textToSend.trim()) {
       const languageInstruction = language === 'km' ? "កំណត់សម្គាល់៖ សូមឆ្លើយតបជាភាសាខ្មែរ ចំពោះការវិភាគ និងការពន្យល់។\n\n" : "";
@@ -477,36 +480,20 @@ ${currentJscad}
   const exportStl = async () => {
     if (!currentJscad) return;
     try {
+      setExportError(null);
       const jscadStlSerializer = await import('@jscad/stl-serializer');
       const mod = await import('@jscad/modeling');
-      
-      const serialize = jscadStlSerializer.serialize;
-      
-        const script = `
-        var require = (pkg) => pkg === '@jscad/modeling' ? modeling : {};
-        var module = { exports: {} };
-        var exports = module.exports;
-        var { primitives, extrusions, transforms, booleans, colors, expansions, geometries, hulls, measurements, mathematics, utils } = modeling;
-        ${currentJscad
-          .replace(/import\s+[\s\S]*?from\s+['"].*?['"];?/g, '')
-          .replace(/\bmodule\.exports\s*=\s*\{\s*main\s*\};?/g, 'exports.main = main;')
-          .replace(/\bexport\s+default\s+/g, 'var defaultExport = ')
-          .replace(/\bexport\s+(const|let|var)\s+/g, 'var ')
-          .replace(/\bexport\s+function\s+/g, 'function ')
-          .replace(/\bexport\s+class\s+/g, 'class ')
-          .replace(/\bexport\s+\{[\s\S]*?\};?/g, '')
-          .replace(/\bconst\b/g, 'var')
-          .replace(/\blet\b/g, 'var')
-        }
-        var finalMain = typeof main !== 'undefined' ? main : (typeof defaultExport !== 'undefined' ? defaultExport : (typeof exports.main !== 'undefined' ? exports.main : (typeof module.exports === 'function' ? module.exports : (typeof module.exports.main !== 'undefined' ? module.exports.main : (typeof exports.default !== 'undefined' ? exports.default : null)))));
-        if (typeof finalMain !== 'function') throw new Error('JSCAD main function not found');
-        return finalMain.length >= 2 ? finalMain(modeling, modelParams) : finalMain(modelParams);
-      `;
 
-      const mainFunc = new Function('modeling', 'modelParams', script);
-      const result = mainFunc(mod, modelParams);
-      
-      const rawData = serialize({ binary: true }, result);
+      const result = executeJscad(currentJscad, modelParams, mod);
+      const resultArray = Array.isArray(result) ? result : [result];
+      const geom3 = (mod as any).geometries?.geom3;
+      const serializable = resultArray.filter(item => geom3?.isA?.(item));
+
+      if (serializable.length === 0) {
+        throw new Error('The generated model is not a valid 3D solid for STL export.');
+      }
+
+      const rawData = jscadStlSerializer.serialize({ binary: true }, ...serializable);
       const blob = new Blob(rawData, { type: 'application/sla' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -514,9 +501,11 @@ ${currentJscad}
       a.download = `3d-model-${Date.now()}.stl`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('STL Export failed.');
+      const message = err?.message || 'STL Export failed.';
+      setExportError(message);
+      setRenderError(`STL export failed: ${message}`);
     }
   };
 
@@ -1019,6 +1008,28 @@ ${currentJscad}
            )}
         </main>
        </div>
+
+       <AnimatePresence>
+          {exportError && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              className="fixed right-4 bottom-24 sm:bottom-6 z-[90] max-w-sm bg-red-500/10 border border-red-500/30 text-red-100 rounded-xl p-4 shadow-2xl backdrop-blur-md"
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-300">STL export failed</p>
+                  <p className="text-[12px] leading-relaxed mt-1 break-words">{exportError}</p>
+                </div>
+                <button onClick={() => setExportError(null)} className="p-1 text-red-200/70 hover:text-red-100">
+                  <Trash2 className="w-4 h-4 rotate-45" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+       </AnimatePresence>
 
        {/* Modals & Overlays */}
        <AnimatePresence>
