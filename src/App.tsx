@@ -363,6 +363,26 @@ export default function App() {
     }
   };
 
+  const inferPartModeSpec = (scadCode?: string, jscadCode?: string) => {
+    const source = `${scadCode || ''}\n${jscadCode || ''}`;
+    const commentMatch = source.match(/part_mode\s*=\s*["'][^"']+["']\s*;\s*\/\/\s*\[([^\]]+)\]/i);
+    const options = commentMatch
+      ? commentMatch[1].split(',').map(option => option.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+      : source.includes('part_mode')
+        ? ['all', 'separate']
+        : [];
+
+    if (options.length === 0) return null;
+
+    return {
+      name: 'part_mode',
+      label: 'Part Mode',
+      type: 'select',
+      default: options.includes('all') ? 'all' : options[0],
+      options
+    };
+  };
+
   const handleSend = async (overrideInput?: string) => {
     const textToSend = overrideInput || input;
     if (!textToSend.trim() && !selectedImage) return;
@@ -410,26 +430,43 @@ export default function App() {
       
       // Extract code
       const scadMatch = response.match(/```scad([\s\S]*?)```/i);
-      if (scadMatch) setCurrentScad(scadMatch[1].trim());
+      const nextScad = scadMatch ? scadMatch[1].trim() : null;
+      if (nextScad) setCurrentScad(nextScad);
 
       const jscadMatch = response.match(/```(?:jscad|javascript|js)([\s\S]*?)```/i);
-      if (jscadMatch) setCurrentJscad(jscadMatch[1].trim());
+      const nextJscad = jscadMatch ? jscadMatch[1].trim() : null;
+      if (nextJscad) setCurrentJscad(nextJscad);
 
       // Extract parameters
       const paramsMatch = response.match(/```json([\s\S]*?)```/i);
+      let parsedSpecs: any[] | null = null;
       if (paramsMatch) {
          try {
             const specs = JSON.parse(paramsMatch[1].trim());
             if (Array.isArray(specs)) {
-               setModelParamSpecs(specs);
-               const initialParams: Record<string, any> = {};
-               specs.forEach(s => {
-                  initialParams[s.name] = s.default;
-               });
-               setModelParams(initialParams);
-            }
-         } catch (e) {
-            console.warn("Failed to parse parameters JSON", e);
+               parsedSpecs = specs;
+             }
+          } catch (e) {
+             console.warn("Failed to parse parameters JSON", e);
+          }
+      }
+
+      if (parsedSpecs) {
+         const partModeSpec = inferPartModeSpec(nextScad || undefined, nextJscad || undefined);
+         const specsWithPartMode = partModeSpec && !parsedSpecs.some(s => s.name === 'part_mode')
+           ? [partModeSpec, ...parsedSpecs]
+           : parsedSpecs;
+         setModelParamSpecs(specsWithPartMode);
+         const initialParams: Record<string, any> = {};
+         specsWithPartMode.forEach(s => {
+            initialParams[s.name] = s.default ?? (s.type === 'select' ? s.options?.[0] : 0);
+         });
+         setModelParams(initialParams);
+      } else {
+         const partModeSpec = inferPartModeSpec(nextScad || undefined, nextJscad || undefined);
+         if (partModeSpec) {
+            setModelParamSpecs([partModeSpec]);
+            setModelParams({ part_mode: partModeSpec.default });
          }
       }
 
@@ -924,11 +961,25 @@ ${currentJscad}
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {modelParamSpecs.map((spec, i) => (
                              <div key={i} className="p-6 bg-app-surface rounded-2xl border border-app-border hover:border-[#3b82f6]/30 transition-all">
-                                <div className="flex justify-between mb-4">
+                                <div className="flex justify-between gap-4 mb-4">
                                    <label className="text-[10px] font-black uppercase tracking-widest text-app-text-muted">{spec.label}</label>
-                                   <span className="text-[12px] font-mono text-[#3b82f6] font-bold">{modelParams[spec.name]}</span>
+                                   <span className="text-[12px] font-mono text-[#3b82f6] font-bold text-right">{String(modelParams[spec.name] ?? '')}</span>
                                 </div>
-                                <input type="range" min={spec.min} max={spec.max} step={spec.step || 1} value={modelParams[spec.name]} onChange={e => setModelParams(prev => ({ ...prev, [spec.name]: parseFloat(e.target.value) }))} className="w-full h-1 bg-app-border rounded-full appearance-none cursor-pointer accent-[#3b82f6]" />
+                                {spec.type === 'select' || Array.isArray(spec.options) ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    {(spec.options || []).map((option: string) => (
+                                      <button
+                                        key={option}
+                                        onClick={() => setModelParams(prev => ({ ...prev, [spec.name]: option }))}
+                                        className={`px-3 py-2 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${modelParams[spec.name] === option ? 'bg-[#3b82f6] border-[#3b82f6] text-white' : 'bg-app-bg border-app-border text-app-text-muted hover:text-app-text hover:border-[#3b82f6]/50'}`}
+                                      >
+                                        {option}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <input type="range" min={spec.min} max={spec.max} step={spec.step || 1} value={modelParams[spec.name]} onChange={e => setModelParams(prev => ({ ...prev, [spec.name]: parseFloat(e.target.value) }))} className="w-full h-1 bg-app-border rounded-full appearance-none cursor-pointer accent-[#3b82f6]" />
+                                )}
                              </div>
                           ))}
                        </div>
