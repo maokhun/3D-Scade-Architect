@@ -1,9 +1,12 @@
-import { Suspense, useRef } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Grid, PerspectiveCamera, Environment, Float, Stage } from '@react-three/drei';
-import { AlertTriangle, BoxSelect, Code as CodeIcon, Download, Loader2, Maximize2, Sparkles } from 'lucide-react';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import type { MutableRefObject } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { OrbitControls, Grid, PerspectiveCamera, Environment, Float, Stage, Text } from '@react-three/drei';
+import { AlertTriangle, BoxSelect, Code as CodeIcon, Download, Loader2, Maximize2, RotateCcw, Sparkles } from 'lucide-react';
 import * as THREE from 'three';
 import { JscadRenderer } from './JscadRenderer';
+
+type ViewPreset = 'iso' | 'front' | 'right' | 'top';
 
 function ModelPlaceholder({
   jscadCode,
@@ -40,6 +43,49 @@ function ModelPlaceholder({
   );
 }
 
+function CameraViewController({
+  view,
+  controlsRef
+}: {
+  view: ViewPreset;
+  controlsRef: MutableRefObject<any>;
+}) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    const distance = 18;
+    const positions: Record<ViewPreset, [number, number, number]> = {
+      iso: [distance, distance, distance],
+      front: [0, -distance, 4],
+      right: [distance, 0, 4],
+      top: [0, 0.01, distance]
+    };
+
+    camera.position.set(...positions[view]);
+    camera.up.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+
+    if (controlsRef.current) {
+      controlsRef.current.target.set(0, 0, 0);
+      controlsRef.current.update();
+    }
+  }, [camera, controlsRef, view]);
+
+  return null;
+}
+
+function OpenScadAxes() {
+  return (
+    <group>
+      <axesHelper args={[8]} />
+      <Text position={[8.8, 0, 0]} fontSize={0.75} color="#ef4444" anchorX="center" anchorY="middle">X</Text>
+      <Text position={[0, 8.8, 0]} fontSize={0.75} color="#22c55e" anchorX="center" anchorY="middle">Y</Text>
+      <Text position={[0, 0, 8.8]} fontSize={0.75} color="#3b82f6" anchorX="center" anchorY="middle">Z</Text>
+    </group>
+  );
+}
+
 export default function Preview3D({
   isProcessing,
   jscadCode,
@@ -65,6 +111,9 @@ export default function Preview3D({
   onRepair?: () => void;
   t: any;
 }) {
+  const [view, setView] = useState<ViewPreset>('iso');
+  const controlsRef = useRef<any>(null);
+
   return (
     <div className="w-full h-full bg-app-bg relative rounded-md overflow-hidden border border-app-border group">
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-2 max-w-[calc(100%-1.5rem)]">
@@ -87,6 +136,31 @@ export default function Preview3D({
           </div>
         </div>
       )}
+
+      <div className="absolute top-3 right-3 z-10 flex flex-col sm:flex-row gap-1 bg-app-surface/80 backdrop-blur-sm p-1 rounded-md border border-app-border shadow-2xl">
+        {[
+          { id: 'iso', label: 'ISO' },
+          { id: 'front', label: 'FRONT' },
+          { id: 'right', label: 'RIGHT' },
+          { id: 'top', label: 'TOP' }
+        ].map(item => (
+          <button
+            key={item.id}
+            onClick={() => setView(item.id as ViewPreset)}
+            className={`px-2.5 py-1.5 rounded text-[9px] font-black uppercase tracking-widest transition-all ${view === item.id ? 'bg-[#3b82f6] text-white' : 'text-app-text-muted hover:bg-app-surface-hover hover:text-app-text'}`}
+            title={`${item.label} view`}
+          >
+            {item.label}
+          </button>
+        ))}
+        <button
+          onClick={() => setView('iso')}
+          className="px-2 py-1.5 rounded text-app-text-muted hover:bg-app-surface-hover hover:text-app-text transition-all"
+          title="Reset view"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </button>
+      </div>
 
       {isProcessing && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-app-bg/45 backdrop-blur-[2px] px-4">
@@ -153,25 +227,31 @@ export default function Preview3D({
       </div>
 
       <Canvas shadows dpr={[1, 1.5]} performance={{ min: 0.5 }}>
-        <PerspectiveCamera makeDefault position={[15, 15, 15]} fov={45} />
+        <color attach="background" args={['#f5f7fb']} />
+        <PerspectiveCamera makeDefault position={[18, 18, 18]} fov={45} />
+        <CameraViewController view={view} controlsRef={controlsRef} />
+        <ambientLight intensity={1.25} />
+        <directionalLight position={[10, 10, 14]} intensity={1.8} castShadow />
         <Suspense fallback={null}>
-          <Stage environment="city" intensity={0.2} shadows="contact">
+          <Stage environment="city" intensity={0.35} shadows="contact" adjustCamera={false}>
             <ModelPlaceholder jscadCode={jscadCode} modelParams={modelParams} onError={onError} />
           </Stage>
         </Suspense>
-        <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 1.75} enableDamping />
+        <OpenScadAxes />
+        <OrbitControls ref={controlsRef} makeDefault minPolarAngle={0} maxPolarAngle={Math.PI} enableDamping />
         {showGrid && (
           <Grid
             infiniteGrid
             cellSize={2}
             sectionSize={10}
-            sectionColor="#1e232d"
-            cellColor="#0a0c10"
-            fadeDistance={50}
-            fadeStrength={3}
+            sectionColor="#7b8494"
+            cellColor="#c7ced8"
+            fadeDistance={70}
+            fadeStrength={2.4}
+            rotation={[Math.PI / 2, 0, 0]}
           />
         )}
-        <Environment preset="night" />
+        <Environment preset="city" />
       </Canvas>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Edges } from '@react-three/drei';
 import * as THREE from 'three';
 import * as modeling from '@jscad/modeling';
 import { executeJscad, getGeom3Solids } from '../utils/jscadExecutor';
@@ -87,18 +88,15 @@ export function JscadRenderer({ jscadCode, modelParams = {}, onError }: JscadRen
   return (
     <group>
       <mesh geometry={geometry}>
-        <meshPhysicalMaterial 
-          color="#3b82f6" 
-          metalness={0.8} 
-          roughness={0.1} 
-          clearcoat={1}
-          clearcoatRoughness={0.1}
-          emissive="#1e40af"
-          emissiveIntensity={0.1}
+        <meshStandardMaterial 
+          color="#f5c84b" 
+          metalness={0.05} 
+          roughness={0.48}
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
         />
-      </mesh>
-      <mesh geometry={geometry}>
-        <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.1} />
+        <Edges threshold={20} color="#5f4410" />
       </mesh>
     </group>
   );
