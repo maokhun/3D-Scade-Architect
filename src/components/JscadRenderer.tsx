@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import * as modeling from '@jscad/modeling';
-import { executeJscad } from '../utils/jscadExecutor';
+import { executeJscad, getGeom3Solids } from '../utils/jscadExecutor';
 
 interface JscadRendererProps {
   jscadCode: string | null;
@@ -24,7 +24,10 @@ export function JscadRenderer({ jscadCode, modelParams = {}, onError }: JscadRen
       const result = executeJscad(jscadCode, modelParams, modeling);
 
       if (result) {
-        const geometries = Array.isArray(result) ? result : [result];
+        const solids = getGeom3Solids(result, modeling);
+        const geometries = (modeling as any).modifiers?.generalize
+          ? getGeom3Solids((modeling as any).modifiers.generalize({ snap: true, triangulate: true }, solids), modeling)
+          : solids;
         const combinedGeometry = new THREE.BufferGeometry();
         
         let allPositions: number[] = [];
@@ -57,7 +60,7 @@ export function JscadRenderer({ jscadCode, modelParams = {}, onError }: JscadRen
         });
 
         if (allPositions.length === 0) {
-          throw new Error('Generated JSCAD did not return a 3D solid.');
+          throw new Error('Generated JSCAD did not return a renderable 3D solid.');
         }
 
         combinedGeometry.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));

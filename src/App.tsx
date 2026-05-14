@@ -12,6 +12,8 @@ import {
   Trash2, 
   ChevronRight, 
   Code as CodeIcon,
+  Clipboard,
+  ClipboardCheck,
   Loader2,
   Monitor,
   Layers,
@@ -36,7 +38,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { ChatMessage } from './services/geminiService';
-import { executeJscad } from './utils/jscadExecutor';
+import { executeJscad, getGeom3Solids } from './utils/jscadExecutor';
 
 const Preview3D = lazy(() => import('./components/Preview3D'));
 const ReactMarkdown = lazy(() => import('react-markdown'));
@@ -119,6 +121,7 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [currentScad, setCurrentScad] = useState<string | null>(null);
   const [currentJscad, setCurrentJscad] = useState<string | null>(null);
+  const [codeView, setCodeView] = useState<'jscad' | 'scad'>('jscad');
   const [activeTab, setActiveTab] = useState<'chat' | 'engine' | 'blueprint' | 'params' | '3d'>('chat');
   const [lastUploadedImage, setLastUploadedImage] = useState<string | null>(null);
   const [conceptImages, setConceptImages] = useState<{prompt: string, url: string}[]>([]);
@@ -485,9 +488,7 @@ ${currentJscad}
       const mod = await import('@jscad/modeling');
 
       const result = executeJscad(currentJscad, modelParams, mod);
-      const resultArray = Array.isArray(result) ? result : [result];
-      const geom3 = (mod as any).geometries?.geom3;
-      const serializable = resultArray.filter(item => geom3?.isA?.(item));
+      const serializable = getGeom3Solids(result, mod);
 
       if (serializable.length === 0) {
         throw new Error('The generated model is not a valid 3D solid for STL export.');
@@ -848,8 +849,45 @@ ${currentJscad}
                      </AnimatePresence>
                   </div>
                 ) : activeTab === 'engine' ? (
-                    <div className="h-full bg-app-bg p-4 sm:p-10 font-mono text-[12px] sm:text-[13px] overflow-auto text-app-text selection:bg-[#264f78] custom-scrollbar">
-                      <pre><code>{currentJscad || '// NO DESIGN DATA GENERATED'}</code></pre>
+                    <div className="h-full bg-app-bg flex flex-col overflow-hidden">
+                      <div className="shrink-0 border-b border-app-border px-4 sm:px-8 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="bg-app-surface p-1 rounded-lg flex gap-1 w-full sm:w-auto overflow-x-auto scrollbar-hide">
+                          {[
+                            { id: 'jscad', label: 'JSCAD', disabled: !currentJscad },
+                            { id: 'scad', label: 'SCAD', disabled: !currentScad }
+                          ].map(item => (
+                            <button
+                              key={item.id}
+                              onClick={() => setCodeView(item.id as 'jscad' | 'scad')}
+                              disabled={item.disabled}
+                              className={`shrink-0 px-4 py-2 rounded-md text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30 ${codeView === item.id ? 'bg-[#3b82f6] text-white' : 'text-app-text-muted hover:text-app-text'}`}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2 justify-end">
+                          <button
+                            onClick={() => copyToClipboard(codeView === 'scad' ? (currentScad || '') : (currentJscad || ''))}
+                            disabled={codeView === 'scad' ? !currentScad : !currentJscad}
+                            className="flex items-center gap-2 bg-app-surface hover:bg-app-surface-hover disabled:opacity-30 text-app-text-dim px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border border-app-border"
+                          >
+                            {copied ? <ClipboardCheck className="w-4 h-4 text-emerald-500" /> : <Clipboard className="w-4 h-4" />}
+                            <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
+                          </button>
+                          <button
+                            onClick={codeView === 'scad' ? exportScad : exportStl}
+                            disabled={codeView === 'scad' ? !currentScad : !currentJscad}
+                            className="flex items-center gap-2 bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-30 text-black px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span className="hidden sm:inline">{codeView === 'scad' ? 'SCAD' : 'STL'}</span>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex-1 p-4 sm:p-8 font-mono text-[12px] sm:text-[13px] overflow-auto text-app-text selection:bg-[#264f78] custom-scrollbar">
+                        <pre className="whitespace-pre-wrap break-words"><code>{codeView === 'scad' ? (currentScad || '// NO SCAD CODE GENERATED') : (currentJscad || '// NO JSCAD CODE GENERATED')}</code></pre>
+                      </div>
                    </div>
                  ) : activeTab === 'blueprint' ? (
                    <div className="h-full p-4 sm:p-8 overflow-y-auto custom-scrollbar bg-app-bg">

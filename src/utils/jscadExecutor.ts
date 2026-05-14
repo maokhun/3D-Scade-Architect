@@ -118,3 +118,14 @@ export function executeJscad(
   const mainFunc = new Function('modeling', 'modelParams', script);
   return mainFunc(wrappedModeling, modelParams);
 }
+
+export function flattenJscadResult(result: any): any[] {
+  if (!result) return [];
+  if (!Array.isArray(result)) return [result];
+  return result.flatMap(item => flattenJscadResult(item));
+}
+
+export function getGeom3Solids(result: any, modeling: any): any[] {
+  const geom3 = modeling?.geometries?.geom3;
+  return flattenJscadResult(result).filter(item => geom3?.isA?.(item));
+}
