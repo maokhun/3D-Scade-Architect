@@ -1,33 +1,19 @@
 @echo off
 setlocal
 
-cd /d "%~dp0"
+set "APP_DIR=%~dp0"
 
-where npm >nul 2>nul
-if errorlevel 1 (
-  echo npm was not found. Please install Node.js first.
-  pause
-  exit /b 1
-)
+start "" powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command ^
+  "$ErrorActionPreference = 'SilentlyContinue';" ^
+  "$appDir = '%APP_DIR%';" ^
+  "$url = 'http://localhost:3000/';" ^
+  "Set-Location -LiteralPath $appDir;" ^
+  "function Open-App { Start-Process $url; exit 0 }" ^
+  "try { Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 1 | Out-Null; Open-App } catch {}" ^
+  "if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { Add-Content -LiteralPath 'run.log' -Value 'npm was not found. Install Node.js first.'; exit 1 }" ^
+  "if (-not (Test-Path -LiteralPath 'node_modules')) { npm install *> 'run.log'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }" ^
+  "$server = Start-Process -FilePath 'npm.cmd' -ArgumentList 'run','dev' -WorkingDirectory $appDir -WindowStyle Hidden -RedirectStandardOutput 'server-start.log' -RedirectStandardError 'server-start.err.log' -PassThru;" ^
+  "for ($i = 0; $i -lt 60; $i++) { try { Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 1 | Out-Null; Open-App } catch { Start-Sleep -Seconds 1 } }" ^
+  "Start-Process $url"
 
-if not exist "node_modules" (
-  echo Installing dependencies...
-  call npm install
-  if errorlevel 1 (
-    echo.
-    echo Dependency install failed.
-    pause
-    exit /b 1
-  )
-)
-
-echo Opening browser when the local server is ready...
-start "" powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "for ($i = 0; $i -lt 60; $i++) { try { Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:3000/' -TimeoutSec 1 | Out-Null; Start-Process 'http://localhost:3000/'; exit 0 } catch { Start-Sleep -Seconds 1 } }; Start-Process 'http://localhost:3000/'"
-
-echo Starting local app...
-echo.
-call npm run dev
-
-echo.
-echo Local server stopped.
-pause
+exit /b 0
