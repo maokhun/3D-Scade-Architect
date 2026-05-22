@@ -14,7 +14,6 @@ import {
   Code as CodeIcon,
   Loader2,
   FileDown,
-  Monitor,
   Maximize2,
   Layers,
   Cpu,
@@ -42,7 +41,6 @@ import {
   FolderOpen,
   Moon,
   Sun,
-  ExternalLink,
   X,
   Play,
   Eye
@@ -617,8 +615,6 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [language, setLanguage] = useState<'en' | 'km'>('en');
-  const [showCopyNotice, setShowCopyNotice] = useState(false);
-
   const [iframeUrl, setIframeUrl] = useState<string>('https://ochafik.com/openscad/');
   const [debouncedIframeUrl, setDebouncedIframeUrl] = useState<string>('https://ochafik.com/openscad/');
   const lastScadRef = useRef<string | null>(null);
@@ -1100,10 +1096,6 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
       if (scadMatch) {
          const code = scadMatch[1].trim();
          setCurrentScad(code);
-         setShowCopyNotice(true);
-         setTimeout(() => {
-            setShowCopyNotice(false);
-         }, 12000);
       }
 
       const jscadMatch = response.match(/```jscad([\s\S]*?)```/);
@@ -1461,90 +1453,14 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
              {/* Large Central Canvas */}
              <div className="h-full w-full">
                 {activeTab === '3d' ? (
-                   <div className="w-full h-full bg-[#0b0c10] relative rounded-md overflow-hidden border border-app-border flex flex-col">
-                     {/* Clean information notification header */}
-                     <div className="flex flex-col md:flex-row md:items-center justify-between px-4 py-3 border-b border-app-border bg-[#10121a]/95 backdrop-blur-sm z-10 shrink-0 gap-3">
-                       <div className="flex items-center gap-2.5">
-                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></div>
-                         <div>
-                           <span className="text-[12px] font-black text-white tracking-wide uppercase block">
-                             {language === 'km' ? 'សួនកុមារ 3D OpenSCAD Sandbox' : 'Ochafik OpenSCAD 3D Sandbox'}
-                           </span>
-                           <span className="text-[10px] text-[#94a3b8] mt-0.5 block leading-normal">
-                             {language === 'km' 
-                               ? 'កូដត្រូវបានបញ្ជូន និងចងក្រងដោយស្វ័យប្រវត្តក្នុងកម្មវិធីមើល 3D ochafik ភ្លាមៗ!'
-                               : 'Generated OpenSCAD code is automatically copied and updated inside the ochafik preview canvas!'
-                             }
-                           </span>
-                         </div>
-                       </div>
-
-                       {/* Actions */}
-                        <div className="flex flex-wrap items-center gap-3 self-end md:self-auto shrink-0">
-                          {/* Copy manual button */}
-                          <button
-                            onClick={() => {
-                              if (currentScad) {
-                                let copied = false;
-                                if (navigator.clipboard?.writeText) {
-                                  navigator.clipboard.writeText(currentScad);
-                                  copied = true;
-                                }
-                                if (!copied) {
-                                  const tx = document.createElement("textarea");
-                                  tx.value = currentScad;
-                                  tx.style.position = "fixed";
-                                  tx.style.opacity = "0";
-                                  document.body.appendChild(tx);
-                                  tx.select();
-                                  document.execCommand('copy');
-                                  document.body.removeChild(tx);
-                                }
-                                setShowCopyNotice(true);
-                                setTimeout(() => setShowCopyNotice(false), 8000);
-                              }
-                            }}
-                            className="bg-[#1e293b] hover:bg-[#334155] border border-[#1e293b]/60 text-[10px] text-white px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 shrink-0"
-                          >
-                            <Clipboard className="w-3.5 h-3.5" />
-                            {language === 'km' ? 'ចម្លងកូដ OpenSCAD' : 'Copy SCAD Code'}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex-1 w-full overflow-hidden relative">
-                        <div className="w-full h-full relative">
-                          <iframe 
-                            key={debouncedIframeUrl}
-                            src={debouncedIframeUrl} 
-                            className="w-full h-full border-none"
-                            title="OpenSCAD Editor and Viewer"
-                            sandbox="allow-scripts allow-same-origin allow-popups allow-downloads allow-forms"
-                          />
-                          {showCopyNotice && (
-                            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-app-surface/95 backdrop-blur-md border border-[#3b82f6]/30 rounded-2xl px-6 py-4 shadow-2xl flex items-center gap-4 max-w-[90%] transition-all">
-                              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></div>
-                              <div className="flex-1 text-left">
-                                <span className="text-[12px] font-bold text-white tracking-wide block">
-                                  {language === 'km' ? 'កូដ OpenSCAD ត្រូវបានធ្វើបច្ចុប្បន្នភាពស្វ័យប្រវត្ត!' : 'OpenSCAD Code Synced & Updated!'}
-                                </span>
-                                <span className="text-[11px] text-app-text-muted mt-0.5 block">
-                                  {language === 'km' 
-                                    ? 'កូដត្រូវបានបញ្ជូន និងចងក្រងដោយស្វ័យប្រវត្តក្នុងកម្មវិធីមើល 3D ochafik'
-                                    : 'Code is sent and updated automatically inside the ochafik 3D playground editor window.'
-                                  }
-                                </span>
-                              </div>
-                              <button 
-                                onClick={() => setShowCopyNotice(false)} 
-                                className="bg-app-surface border border-app-border p-1.5 rounded-lg text-app-text-muted hover:text-white transition-colors"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                   <div className="w-full h-full bg-[#0b0c10] relative overflow-hidden">
+                      <iframe
+                        key={debouncedIframeUrl}
+                        src={debouncedIframeUrl}
+                        className="w-full h-full border-none"
+                        title="OpenSCAD Editor and Viewer"
+                        sandbox="allow-scripts allow-same-origin allow-popups allow-downloads allow-forms"
+                      />
                     </div>
 ) : activeTab === 'chat' ? (
                   <div className="h-full overflow-y-auto bg-app-bg custom-scrollbar p-8 relative" onScroll={handleScroll}>
@@ -1935,6 +1851,7 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
           </div>
 
            {/* Floating Bottom Prompt Bar */}
+             {activeTab !== '3d' && (
              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-2xl px-6 z-30">
                 <div className="bg-app-surface/80 backdrop-blur-2xl border border-app-border p-1.5 rounded-2xl shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] flex items-end gap-3 group focus-within:border-[#3b82f6] transition-all">
                    <button onClick={() => fileInputRef.current?.click()} className="p-3 text-app-text-muted hover:text-[#3b82f6] transition-colors"><ImageIcon className="w-6 h-6" /></button>
@@ -1980,92 +1897,7 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
                    </button>
                 </div>
              </div>
-
-           {/* Right Panel: Global Inspector / Preview */}
-           <div className="w-[380px] bg-app-bg border-l border-app-border flex flex-col hidden xl:flex shrink-0">
-              <div className="p-6 border-b border-app-border flex items-center justify-between">
-                 <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-app-text-muted">Live Preview</h2>
-                 <div className="flex gap-1.5 font-mono text-[9px] text-app-text-muted">
-                    <span className="text-emerald-500">60FPS</span>
-                    <span>•</span>
-                    <span>WEB_GL_2.0</span>
-                 </div>
-              </div>
-              <div className="flex-1 p-4">
-                 <div className="h-[280px] w-full rounded-2xl overflow-hidden border border-app-border bg-black/40 p-6 flex flex-col justify-between shadow-inner relative group/panel">
-                    <div className="absolute inset-0 bg-gradient-to-br from-[#3b82f6]/5 to-transparent pointer-events-none"></div>
-                    <div className="space-y-4">
-                       <div className="flex items-center gap-2">
-                          <BoxSelect className="w-5 h-5 text-[#3b82f6] animate-pulse" />
-                          <span className="text-[11px] font-black uppercase text-app-text tracking-wider">OpenSCAD Sync Stream</span>
-                       </div>
-                       <p className="text-[11.5px] text-app-text-muted leading-relaxed">
-                          {currentScad 
-                            ? "OpenSCAD script code is fully synchronized! Copy it and load it inside the OpenSCAD Viewer tab." 
-                            : "Describe your custom 3D part in the Chat box below to generate elegant parametric SCAD code."}
-                       </p>
-                       {currentScad && (
-                          <div className="flex bg-[#11131a] border border-app-border rounded-xl p-3 items-center justify-between mt-2">
-                             <span className="font-mono text-[9px] text-emerald-500 font-black uppercase tracking-widest flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
-                                Clipboard Ready
-                             </span>
-                             <button 
-                                onClick={() => {
-                                   navigator.clipboard.writeText(currentScad || '');
-                                   setCopied(true);
-                                   setTimeout(() => setCopied(false), 2000);
-                                }}
-                                className="text-[10px] bg-app-surface border border-app-border px-2.5 py-1.5 rounded-lg font-bold text-app-text hover:text-[#3b82f6] transition-colors"
-                             >
-                                {copied ? 'Copied!' : 'Copy Code'}
-                             </button>
-                          </div>
-                       )}
-                    </div>
-
-                    <button 
-                       onClick={() => setActiveTab('3d')}
-                       className="w-full bg-[#3b82f6] text-white text-[10px] font-black uppercase tracking-widest py-3 rounded-xl hover:bg-[#2563eb] transition-all shadow-lg shadow-blue-500/10 flex items-center justify-center gap-2 mt-4"
-                    >
-                       <ExternalLink className="w-4 h-4" />
-                       Go to OpenSCAD Player
-                    </button>
-                 </div>
-
-                 <div className="mt-8 space-y-6">
-                    <div>
-                       <h3 className="text-[10px] font-black uppercase tracking-widest text-app-text-muted mb-4">Structural Analysis</h3>
-                       <div className="bg-app-surface border border-app-border p-5 rounded-2xl text-[12px] leading-relaxed text-app-text-dim shadow-xl overflow-y-auto max-h-[300px] custom-scrollbar">
-                          {designAnalysis ? (
-                            <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-xs`}>
-                              <ReactMarkdown>{designAnalysis}</ReactMarkdown>
-                            </div>
-                          ) : (
-                            <p className="italic text-app-text-muted">Generating structural request results...</p>
-                          )}
-                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                       <button onClick={() => setActiveTab('3d')} className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-app-surface border border-app-border hover:border-[#3b82f6]/40 transition-all">
-                          <Monitor className="w-5 h-5 text-[#3b82f6]" />
-                          <span className="text-[9px] font-bold uppercase text-app-text-muted">Fullscreen Open</span>
-                       </button>
-                       <button onClick={() => {
-                          if (currentScad) {
-                             navigator.clipboard.writeText(currentScad);
-                             setCopied(true);
-                             setTimeout(() => setCopied(false), 2000);
-                          }
-                       }} className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-app-surface border border-app-border hover:border-[#3b82f6]/40 transition-all">
-                          <RefreshCw className="w-5 h-5 text-emerald-500" />
-                          <span className="text-[9px] font-bold uppercase text-app-text-muted">Copy SCAD</span>
-                       </button>
-                    </div>
-                 </div>
-              </div>
-           </div>
+             )}
         </main>
        </div>
 
@@ -2332,4 +2164,3 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
     </div>
   );
 }
-
