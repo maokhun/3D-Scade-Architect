@@ -42,6 +42,9 @@
 }
 
 @utility custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-app-border) transparent;
+
   &::-webkit-scrollbar {
     width: 6px;
     height: 6px;

@@ -78,6 +78,14 @@ Act as a highly skilled collaborative partner. Your goal is to provide expert en
 
 Always prioritize being helpful, clear, and professional.`;
 
+const QUICK_SYSTEM_INSTRUCTION = `${SYSTEM_INSTRUCTION}
+
+Quick Mode Overrides:
+- Keep the design analysis short: maximum 5 concise bullets.
+- Generate a practical first version quickly instead of an exhaustive industrial design.
+- Still include the required JSON parameters, OpenSCAD block, and JSCAD block.
+- Keep both code blocks compact and avoid extra decorative details unless the user explicitly asks for them.`;
+
 function getLastUserPrompt(history: any[] = []) {
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i]?.role === "user") {
@@ -215,7 +223,8 @@ async function startServer() {
     try {
       const { history, modelName } = req.body;
       const client = getGeminiClient();
-      const requestedModel = modelName || "gemini-2.5-flash";
+      const requestedModel = modelName || "gemini-2.5-flash-lite";
+      const quickMode = requestedModel.includes("lite");
       const fallbackModels = [requestedModel, "gemini-2.5-flash", "gemini-2.5-flash-lite"];
       const modelsToTry = [...new Set(fallbackModels)];
       let lastError: any = null;
@@ -226,8 +235,9 @@ async function startServer() {
             model,
             contents: history,
             config: {
-              systemInstruction: SYSTEM_INSTRUCTION,
-              temperature: 0.5,
+              systemInstruction: quickMode ? QUICK_SYSTEM_INSTRUCTION : SYSTEM_INSTRUCTION,
+              temperature: quickMode ? 0.35 : 0.5,
+              ...(quickMode ? { maxOutputTokens: 8192 } : {}),
             },
           });
 

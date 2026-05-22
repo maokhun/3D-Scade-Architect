@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import App from './App';
+import App, { extractFencedCode } from './App';
 
 vi.mock('./services/geminiService', () => ({
   geminiService: {
@@ -38,5 +38,17 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: /untitled project/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/describe your 3d component/i)).toBeInTheDocument();
+  });
+
+  it('extracts OpenSCAD fences even when the AI uses alternate labels', () => {
+    const response = [
+      'Here is the model:',
+      '```OpenSCAD',
+      '$fn = 50;',
+      'cube([10, 10, 10]);',
+      '```',
+    ].join('\n');
+
+    expect(extractFencedCode(response, ['scad', 'openscad', 'open-scad'])).toBe('$fn = 50;\ncube([10, 10, 10]);');
   });
 });

@@ -471,6 +471,14 @@ function getUpdatedScadCode(rawScad: string, params: Record<string, any>, specs:
   return updated;
 }
 
+export function extractFencedCode(markdown: string, languages: string[]): string | null {
+  const labels = languages
+    .map(label => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  const match = markdown.match(new RegExp(`\`\`\`\\s*(?:${labels})[^\\S\\r\\n]*\\r?\\n?([\\s\\S]*?)\`\`\``, 'i'));
+  return match ? match[1].trim() : null;
+}
+
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -508,7 +516,7 @@ export default function App() {
   const [lastUploadedImage, setLastUploadedImage] = useState<string | null>(null);
   const [conceptImages, setConceptImages] = useState<{prompt: string, url: string}[]>([]);
   const [designAnalysis, setDesignAnalysis] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<'gemini-2.5-flash' | 'gemini-2.5-flash-lite'>('gemini-2.5-flash');
+  const [selectedModel, setSelectedModel] = useState<'gemini-2.5-flash' | 'gemini-2.5-flash-lite'>('gemini-2.5-flash-lite');
   const [showSettings, setShowSettings] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -636,17 +644,18 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [language, setLanguage] = useState<'en' | 'km'>('en');
-  const [iframeUrl, setIframeUrl] = useState<string>('https://ochafik.com/openscad/');
-  const [debouncedIframeUrl, setDebouncedIframeUrl] = useState<string>('https://ochafik.com/openscad/');
+  const OPENSCAD_PLAYGROUND_URL = 'https://ochafik.com/openscad2/';
+  const [iframeUrl, setIframeUrl] = useState<string>(OPENSCAD_PLAYGROUND_URL);
+  const [debouncedIframeUrl, setDebouncedIframeUrl] = useState<string>(OPENSCAD_PLAYGROUND_URL);
   const lastScadRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && currentScad) {
       const updatedCode = getUpdatedScadCode(currentScad, modelParams, modelParamSpecs);
-      const nextUrl = `https://ochafik.com/openscad/#code=${encodeURIComponent(updatedCode)}`;
+      const nextUrl = `${OPENSCAD_PLAYGROUND_URL}#code=${encodeURIComponent(updatedCode)}`;
       setIframeUrl(nextUrl);
     } else if (!currentScad) {
-      setIframeUrl('https://ochafik.com/openscad/');
+      setIframeUrl(OPENSCAD_PLAYGROUND_URL);
     }
   }, [isLoading, currentScad, modelParams, modelParamSpecs]);
 
@@ -655,8 +664,8 @@ export default function App() {
 
     const updatedCode = currentScad ? getUpdatedScadCode(currentScad, modelParams, modelParamSpecs) : "";
     const nextUrl = currentScad 
-      ? `https://ochafik.com/openscad/#code=${encodeURIComponent(updatedCode)}` 
-      : 'https://ochafik.com/openscad/';
+      ? `${OPENSCAD_PLAYGROUND_URL}#code=${encodeURIComponent(updatedCode)}` 
+      : OPENSCAD_PLAYGROUND_URL;
 
     const isNewScadCode = lastScadRef.current !== currentScad;
     lastScadRef.current = currentScad;
@@ -1254,20 +1263,19 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
       setMessages(prev => [...prev, assistantMessage]);
       
       // Extract code
-      const scadMatch = response.match(/```scad([\s\S]*?)```/);
-      if (scadMatch) {
-         const code = scadMatch[1].trim();
-         setCurrentScad(code);
+      const scadCode = extractFencedCode(response, ['scad', 'openscad', 'open-scad']);
+      if (scadCode) {
+         setCurrentScad(scadCode);
       }
 
-      const jscadMatch = response.match(/```jscad([\s\S]*?)```/);
-      if (jscadMatch) setCurrentJscad(jscadMatch[1].trim());
+      const jscadCode = extractFencedCode(response, ['jscad']);
+      if (jscadCode) setCurrentJscad(jscadCode);
 
       // Extract parameters
-      const paramsMatch = response.match(/```json([\s\S]*?)```/);
-      if (paramsMatch) {
+      const paramsJson = extractFencedCode(response, ['json']);
+      if (paramsJson) {
          try {
-            const specs = JSON.parse(paramsMatch[1].trim());
+            const specs = JSON.parse(paramsJson);
             if (Array.isArray(specs)) {
                setModelParamSpecs(specs);
                const initialParams: Record<string, any> = {};
@@ -1286,7 +1294,7 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
       setDesignAnalysis(analysis);
 
       // Auto-switch to 3D tab if code was generated
-      if (jscadMatch || scadMatch) {
+      if (jscadCode || scadCode) {
          setActiveTab('3d');
       }
 
@@ -1477,8 +1485,8 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
        </div>
 
        {/* Project Pane (Collapsible Library) */}
-      <div className="w-[300px] border-r border-app-border flex flex-col bg-app-bg hidden lg:flex shrink-0">
-        <div className="p-6">
+      <div className="w-[300px] border-r border-app-border flex flex-col bg-app-bg hidden lg:flex shrink-0 min-h-0">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-6">
            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-app-text-muted mb-6">{t.library}</h2>
            <div className="grid grid-cols-1 gap-3">
               {PART_LIBRARY.map((entry, i) => (
@@ -1523,7 +1531,7 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
            </div>
         </div>
 
-        <div className="mt-auto p-6 border-t border-app-border">
+        <div className="shrink-0 p-6 border-t border-app-border">
             <div className="bg-app-surface p-1 rounded-xl flex gap-1 mb-4">
               <button onClick={() => setLanguage('en')} className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${language === 'en' ? 'bg-[#3b82f6] text-white shadow-lg' : 'text-app-text-muted hover:text-app-text-dim'}`}>EN</button>
               <button onClick={() => setLanguage('km')} className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${language === 'km' ? 'bg-[#3b82f6] text-white shadow-lg' : 'text-app-text-muted hover:text-app-text-dim'}`}>KM</button>
@@ -1603,6 +1611,16 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
            
             <div className="flex items-center gap-3">
                <button
+                 onClick={() => copyToClipboard(currentScad ? getUpdatedScadCode(currentScad, modelParams, modelParamSpecs) : '')}
+                 disabled={!currentScad}
+                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#3b82f6] disabled:bg-app-surface border border-[#3b82f6]/60 disabled:border-app-border text-[10px] font-black uppercase tracking-widest text-white disabled:text-app-text-muted hover:bg-[#2563eb] disabled:hover:bg-app-surface transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                 title={language === 'km' ? 'ចម្លងកូដ OpenSCAD ចុងក្រោយ' : 'Copy latest OpenSCAD code'}
+               >
+                 {copied ? <ClipboardCheck className="w-4 h-4 text-emerald-300" /> : <Clipboard className="w-4 h-4" />}
+                 <span className="hidden xl:inline">{copied ? (language === 'km' ? 'បានចម្លង' : 'Copied') : 'Copy SCAD Code'}</span>
+                 <span className="xl:hidden">SCAD</span>
+               </button>
+               <button
                  onClick={handleNewProject}
                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-app-surface border border-app-border text-[10px] font-black uppercase tracking-widest text-app-text-muted hover:text-app-text hover:border-[#3b82f6]/60 transition-all"
                  title={language === 'km' ? 'បង្កើតគម្រោងថ្មី' : 'Create New Project'}
@@ -1648,8 +1666,17 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
            <div className="flex-1 relative">
              {/* Large Central Canvas */}
              <div className="h-full w-full">
-                {activeTab === '3d' ? (
-                   <div className="w-full h-full bg-[#0b0c10] relative overflow-hidden">
+                 {activeTab === '3d' ? (
+                    <div className="w-full h-full bg-[#0b0c10] relative overflow-hidden">
+                      <button
+                        onClick={() => copyToClipboard(currentScad ? getUpdatedScadCode(currentScad, modelParams, modelParamSpecs) : '')}
+                        disabled={!currentScad}
+                        className="absolute left-3 bottom-3 z-20 flex h-10 items-center gap-2 rounded-md border border-[#3b82f6]/50 bg-app-surface/95 px-4 text-[10px] font-black uppercase tracking-widest text-app-text shadow-xl backdrop-blur transition-all hover:border-[#3b82f6] hover:bg-app-surface-hover disabled:pointer-events-none disabled:opacity-30"
+                        title={language === 'km' ? 'ចម្លងកូដ OpenSCAD' : 'Copy OpenSCAD code'}
+                      >
+                        {copied ? <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Clipboard className="w-3.5 h-3.5 text-[#3b82f6]" />}
+                        <span>{copied ? (language === 'km' ? 'បានចម្លង' : 'Copied') : 'Copy SCAD Code'}</span>
+                      </button>
                       <iframe
                         key={debouncedIframeUrl}
                         src={debouncedIframeUrl}
@@ -2049,11 +2076,21 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
            {/* Floating Bottom Prompt Bar */}
              {activeTab !== '3d' && (
              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-2xl px-6 z-30">
-                <div className="bg-app-surface/80 backdrop-blur-2xl border border-app-border p-1.5 rounded-2xl shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] flex items-end gap-3 group focus-within:border-[#3b82f6] transition-all">
-                   <button onClick={() => fileInputRef.current?.click()} className="p-3 text-app-text-muted hover:text-[#3b82f6] transition-colors"><ImageIcon className="w-6 h-6" /></button>
-                   <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-                   
-                   <div className="flex-1 pb-1">
+                 <div className="bg-app-surface/80 backdrop-blur-2xl border border-app-border p-1.5 rounded-2xl shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] flex items-end gap-3 group focus-within:border-[#3b82f6] transition-all">
+                    <button onClick={() => fileInputRef.current?.click()} className="p-3 text-app-text-muted hover:text-[#3b82f6] transition-colors"><ImageIcon className="w-6 h-6" /></button>
+                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+                    
+                    <div className="flex-1 pb-1">
+                      {currentScad && !isLoading && (
+                        <button
+                          onClick={() => copyToClipboard(getUpdatedScadCode(currentScad, modelParams, modelParamSpecs))}
+                          className="mb-2 inline-flex h-8 items-center gap-2 rounded-md border border-[#3b82f6]/40 bg-[#3b82f6]/10 px-3 text-[10px] font-black uppercase tracking-widest text-[#3b82f6] transition-all hover:border-[#3b82f6] hover:bg-[#3b82f6]/15"
+                          title={language === 'km' ? 'ចម្លងកូដ OpenSCAD ចុងក្រោយ' : 'Copy latest OpenSCAD code'}
+                        >
+                          {copied ? <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Clipboard className="w-3.5 h-3.5" />}
+                          {copied ? (language === 'km' ? 'បានចម្លង' : 'Copied') : 'Copy SCAD Code'}
+                        </button>
+                      )}
                       {selectedImage && (
                         <div className="relative w-16 h-16 mb-2">
                            <img src={selectedImage} className="w-full h-full object-cover rounded-xl border border-app-border" />
@@ -2144,20 +2181,20 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
                         className={`flex flex-col items-center gap-2 py-4 rounded-xl transition-all ${selectedModel === 'gemini-2.5-flash' ? 'bg-[#3b82f6] text-white shadow-xl shadow-blue-500/20' : 'text-app-text-muted hover:text-app-text-dim'}`}
                       >
                         <RefreshCw className="w-4.5 h-4.5" />
-                        <span className="text-[10px] font-black uppercase">Fast Mode</span>
+                        <span className="text-[10px] font-black uppercase">Detailed Mode</span>
                       </button>
                       <button 
                         onClick={() => setSelectedModel('gemini-2.5-flash-lite')}
                         className={`flex flex-col items-center gap-2 py-4 rounded-xl transition-all ${selectedModel === 'gemini-2.5-flash-lite' ? 'bg-[#3b82f6] text-white shadow-xl shadow-blue-500/20' : 'text-app-text-muted hover:text-app-text-dim'}`}
                       >
                         <Cpu className="w-5 h-5" />
-                        <span className="text-[10px] font-black uppercase">Lite Mode</span>
+                        <span className="text-[10px] font-black uppercase">Quick Mode</span>
                       </button>
                     </div>
                     <p className="text-[10px] text-app-text-muted mt-3 leading-relaxed italic">
                       {selectedModel === 'gemini-2.5-flash'
-                        ? "Stable default for 3D generation. If demand spikes, the server retries with Lite."
-                        : "Fast fallback for temporary high-demand periods."}
+                        ? "More detailed engineering output. Slower for complex models."
+                        : "Default faster generation with shorter analysis and compact code."}
                     </p>
                   </div>
 

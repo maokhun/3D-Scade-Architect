@@ -26,14 +26,23 @@ export interface DetectionResponse {
 }
 
 export class GeminiService {
-  async generate3DCode(history: ChatMessage[], modelName: string = "gemini-2.5-flash") {
+  async generate3DCode(history: ChatMessage[], modelName: string = "gemini-2.5-flash-lite") {
     try {
+      const recentHistory = history.slice(-6);
+      const lastIndex = recentHistory.length - 1;
+      const compactOldText = (text: string) => {
+        const withoutCode = text.replace(/```[\s\S]*?```/g, '[previous code omitted]');
+        return withoutCode.length > 2000 ? `${withoutCode.slice(0, 2000)}...` : withoutCode;
+      };
+
       // Map history to the format expected by our backend (and raw API)
-      const formattedHistory = history.map(msg => ({
+      const formattedHistory = recentHistory.map((msg, index) => ({
         role: msg.role === 'model' ? 'model' : 'user',
         parts: msg.parts.map(part => {
-          if (part.text) return { text: part.text };
-          if (part.inlineData) return { inlineData: part.inlineData };
+          if (part.text) return { text: index === lastIndex ? part.text : compactOldText(part.text) };
+          if (part.inlineData) {
+            return index === lastIndex ? { inlineData: part.inlineData } : { text: "[previous image omitted]" };
+          }
           return { text: "" };
         })
       }));
