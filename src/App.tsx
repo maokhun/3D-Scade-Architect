@@ -57,6 +57,19 @@ import { JscadRenderer } from './components/JscadRenderer';
 import { VisionWorkspace } from './components/VisionWorkspace';
 import { BrandingWorkspace } from './components/BrandingWorkspace';
 
+interface AppUserProfile {
+  name: string;
+  email: string;
+  registeredAt: number;
+}
+
+interface SavedProject {
+  name: string;
+  timestamp: number;
+  ownerEmail?: string;
+  data: any;
+}
+
 const PART_LIBRARY = [
   {
     category: "Enclosures",
@@ -656,23 +669,51 @@ export default function App() {
   // History & Persistence
   const [history, setHistory] = useState<any[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [savedDesigns, setSavedDesigns] = useState<{ name: string; timestamp: number; data: any }[]>([]);
+  const [savedDesigns, setSavedDesigns] = useState<SavedProject[]>([]);
   const [showSavedList, setShowSavedList] = useState(false);
   const [showSaveNaming, setShowSaveNaming] = useState(false);
-  const [designName, setDesignName] = useState('New Design');
+  const [designName, setDesignName] = useState('New Project');
+  const [currentProjectName, setCurrentProjectName] = useState('Untitled Project');
+  const [userProfile, setUserProfile] = useState<AppUserProfile | null>(null);
+  const [showAccountSetup, setShowAccountSetup] = useState(false);
+  const [accountName, setAccountName] = useState('');
+  const [accountEmail, setAccountEmail] = useState('');
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [engineView, setEngineView] = useState<'jscad' | 'scad'>('jscad');
 
   useEffect(() => {
-    const saved = localStorage.getItem('3d_architect_saved_designs');
+    const savedProfile = localStorage.getItem('3d_architect_user_profile');
+    if (savedProfile) {
+      try {
+        const profile = JSON.parse(savedProfile);
+        setUserProfile(profile);
+        setAccountName(profile.name || '');
+        setAccountEmail(profile.email || '');
+        return;
+      } catch (e) {
+        console.error("Failed to load user profile", e);
+      }
+    }
+    setShowAccountSetup(true);
+  }, []);
+
+  const getProjectsStorageKey = (profile: AppUserProfile | null = userProfile) => {
+    const email = profile?.email?.trim().toLowerCase();
+    return email ? `3d_architect_saved_projects_${email}` : '3d_architect_saved_designs';
+  };
+
+  useEffect(() => {
+    const saved = localStorage.getItem(getProjectsStorageKey(userProfile));
     if (saved) {
       try {
         setSavedDesigns(JSON.parse(saved));
       } catch (e) {
         console.error("Failed to load saved designs", e);
       }
+    } else {
+      setSavedDesigns([]);
     }
-  }, []);
+  }, [userProfile]);
 
   const pushToHistory = (data: any) => {
     const newHistory = history.slice(0, historyIndex + 1);
@@ -854,7 +895,8 @@ export default function App() {
     pushToHistory(currentState);
   };
 
-  const handleSaveDesign = () => {
+  const saveProjectSnapshot = (nameOverride?: string) => {
+    const projectTitle = (nameOverride || designName || currentProjectName || `Project ${new Date().toLocaleTimeString()}`).trim();
     const currentState = {
       messages,
       currentScad,
@@ -864,26 +906,74 @@ export default function App() {
       modelParamSpecs
     };
     const newDesign = {
-      name: designName || `Design ${new Date().toLocaleTimeString()}`,
+      name: projectTitle,
       timestamp: Date.now(),
+      ownerEmail: userProfile?.email,
       data: currentState
     };
     const updated = [newDesign, ...savedDesigns];
     setSavedDesigns(updated);
-    localStorage.setItem('3d_architect_saved_designs', JSON.stringify(updated));
+    localStorage.setItem(getProjectsStorageKey(), JSON.stringify(updated));
+    setCurrentProjectName(projectTitle);
+    return newDesign;
+  };
+
+  const handleSaveDesign = () => {
+    saveProjectSnapshot();
     setShowSaveNaming(false);
   };
 
   const handleLoadDesign = (design: any) => {
     applyHistoryState(design.data);
     pushToHistory(design.data);
+    setCurrentProjectName(design.name || 'Loaded Project');
+    setDesignName(design.name || 'Loaded Project');
     setShowSavedList(false);
   };
 
   const handleDeleteSaved = (timestamp: number) => {
     const updated = savedDesigns.filter(d => d.timestamp !== timestamp);
     setSavedDesigns(updated);
-    localStorage.setItem('3d_architect_saved_designs', JSON.stringify(updated));
+    localStorage.setItem(getProjectsStorageKey(), JSON.stringify(updated));
+  };
+
+  const handleNewProject = () => {
+    if (messages.length > 0 || currentScad || currentJscad || designAnalysis) {
+      saveProjectSnapshot(currentProjectName);
+    }
+    const nextName = `Project ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    setMessages([]);
+    setInput('');
+    setSelectedImage(null);
+    setCurrentScad(null);
+    setCurrentJscad(null);
+    setEditorScad('');
+    setEditorJscad('');
+    setDesignAnalysis(null);
+    setModelParams({});
+    setModelParamSpecs([]);
+    setRevisions([]);
+    setSelectedRevisionId(null);
+    setPreviewRevisionId(null);
+    setHistory([]);
+    setHistoryIndex(-1);
+    setRenderError(null);
+    setCurrentProjectName(nextName);
+    setDesignName(nextName);
+    setActiveTab('chat');
+  };
+
+  const handleRegisterAccount = () => {
+    const email = accountEmail.trim().toLowerCase();
+    const name = accountName.trim() || '3D Architect User';
+    if (!email || !email.includes('@')) {
+      alert(language === 'km' ? 'សូមបញ្ចូល email ឲ្យត្រឹមត្រូវ។' : 'Please enter a valid email address.');
+      return;
+    }
+    const profile = { name, email, registeredAt: Date.now() };
+    setUserProfile(profile);
+    localStorage.setItem('3d_architect_user_profile', JSON.stringify(profile));
+    setShowAccountSetup(false);
   };
 
   // Proactively push state to history when changed by user or AI
@@ -1290,10 +1380,16 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
                <Settings className="w-6 h-6" />
              </button>
           </div>
-          <div className="mt-auto flex flex-col gap-4">
-             <button className="p-3 rounded-xl hover:bg-app-surface text-app-text-muted hover:text-app-text transition-all"><HelpCircle className="w-6 h-6" /></button>
-             <div className="w-8 h-8 rounded-full bg-[#3b82f6] flex items-center justify-center text-white text-[10px] font-bold">MK</div>
-          </div>
+           <div className="mt-auto flex flex-col gap-4 items-center">
+              <button className="p-3 rounded-xl hover:bg-app-surface text-app-text-muted hover:text-app-text transition-all"><HelpCircle className="w-6 h-6" /></button>
+              <button
+                onClick={() => setShowAccountSetup(true)}
+                className="w-8 h-8 rounded-full bg-[#3b82f6] flex items-center justify-center text-white text-[10px] font-bold hover:bg-[#2563eb] transition-colors"
+                title={userProfile ? `${userProfile.name} - ${userProfile.email}` : 'Register account'}
+              >
+                MK
+              </button>
+           </div>
        </div>
 
        {/* Project Pane (Collapsible Library) */}
@@ -1348,9 +1444,17 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
               <button onClick={() => setLanguage('en')} className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${language === 'en' ? 'bg-[#3b82f6] text-white shadow-lg' : 'text-app-text-muted hover:text-app-text-dim'}`}>EN</button>
               <button onClick={() => setLanguage('km')} className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${language === 'km' ? 'bg-[#3b82f6] text-white shadow-lg' : 'text-app-text-muted hover:text-app-text-dim'}`}>KM</button>
             </div>
+            <div className="mb-4 rounded-xl border border-app-border bg-app-surface/60 p-3">
+              <p className="text-[9px] font-black uppercase tracking-widest text-app-text-muted">Created by</p>
+              <p className="mt-1 text-[12px] font-black text-app-text">Mr. Mao Khun</p>
+              <p className="text-[11px] font-bold text-[#3b82f6]">ម៉ៅ ឃុន</p>
+              {userProfile && (
+                <p className="mt-2 truncate text-[10px] text-app-text-muted">{userProfile.email}</p>
+              )}
+            </div>
             <div className="flex items-center justify-between text-[10px] font-mono mb-2">
-               <span className="text-app-text-muted">Latency</span>
-               <span className="text-emerald-500 font-bold">124ms</span>
+               <span className="text-app-text-muted">Projects</span>
+               <span className="text-emerald-500 font-bold">{savedDesigns.length}</span>
             </div>
             <div className="w-full h-1 bg-app-border rounded-full overflow-hidden">
                <div className="w-[85%] h-full bg-[#3b82f6]"></div>
@@ -1370,7 +1474,7 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
                    <Package className="w-5 h-5" />
                  </button>
                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                 <h1 className={`font-black text-xs sm:text-sm tracking-widest text-app-text uppercase ${language === 'km' ? 'font-khmer-title' : 'font-sans'}`}>Untitled Design_v1.4</h1>
+                  <h1 className={`font-black text-xs sm:text-sm tracking-widest text-app-text uppercase ${language === 'km' ? 'font-khmer-title' : 'font-sans'}`}>{currentProjectName}</h1>
               </div>
 
               <div className="flex items-center gap-1 border-l border-r border-app-border px-2 sm:px-4 h-8">
@@ -1413,14 +1517,22 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
               </div>
            </div>
            
-           <div className="flex items-center gap-3">
-              <button 
-                onClick={() => setShowSavedList(true)}
-                className="p-2 rounded-lg hover:bg-app-surface text-app-text-muted hover:text-app-text transition-all"
-                title="Saved Designs"
-              >
-                 <FolderOpen className="w-5 h-5" />
-              </button>
+            <div className="flex items-center gap-3">
+               <button
+                 onClick={handleNewProject}
+                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-app-surface border border-app-border text-[10px] font-black uppercase tracking-widest text-app-text-muted hover:text-app-text hover:border-[#3b82f6]/60 transition-all"
+                 title={language === 'km' ? 'បង្កើតគម្រោងថ្មី' : 'Create New Project'}
+               >
+                 <FileDown className="w-4 h-4" />
+                 <span className="hidden md:inline">{language === 'km' ? 'គម្រោងថ្មី' : 'New Project'}</span>
+               </button>
+               <button 
+                 onClick={() => setShowSavedList(true)}
+                 className="p-2 rounded-lg hover:bg-app-surface text-app-text-muted hover:text-app-text transition-all"
+                 title={language === 'km' ? 'មើលគម្រោងចាស់' : 'Projects'}
+               >
+                  <FolderOpen className="w-5 h-5" />
+               </button>
               <button 
                 onClick={() => setShowSaveNaming(true)}
                 disabled={!currentJscad}
@@ -2002,6 +2114,63 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
             </motion.div>
           )}
 
+          {showAccountSetup && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+              onClick={() => userProfile && setShowAccountSetup(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                className="bg-app-surface border border-app-border p-8 rounded-3xl w-full max-w-md shadow-2xl shadow-blue-500/10"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-11 h-11 rounded-xl bg-[#3b82f6]/10 text-[#3b82f6] flex items-center justify-center">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-app-text uppercase tracking-tight">
+                      {language === 'km' ? 'ចុះឈ្មោះប្រើប្រាស់' : 'Register Account'}
+                    </h3>
+                    <p className="text-[11px] text-app-text-muted">
+                      {language === 'km' ? 'រក្សា project តាម email នៅលើ browser នេះ។' : 'Store projects by email on this browser.'}
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <input
+                    className="w-full bg-app-bg border border-app-border px-4 py-3 rounded-xl text-app-text outline-none focus:border-[#3b82f6] transition-all"
+                    placeholder={language === 'km' ? 'ឈ្មោះរបស់អ្នក' : 'Your name'}
+                    value={accountName}
+                    onChange={e => setAccountName(e.target.value)}
+                  />
+                  <input
+                    className="w-full bg-app-bg border border-app-border px-4 py-3 rounded-xl text-app-text outline-none focus:border-[#3b82f6] transition-all"
+                    placeholder="email@example.com"
+                    type="email"
+                    value={accountEmail}
+                    onChange={e => setAccountEmail(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleRegisterAccount()}
+                  />
+                </div>
+                <div className="mt-6 rounded-xl border border-app-border bg-app-bg p-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-app-text-muted">Credit</p>
+                  <p className="mt-1 text-[13px] font-black text-app-text">Created by Mr. Mao Khun</p>
+                  <p className="text-[12px] font-bold text-[#3b82f6]">បង្កើតដោយ ម៉ៅ ឃុន</p>
+                </div>
+                <div className="flex gap-3 mt-6">
+                  {userProfile && (
+                    <button onClick={() => setShowAccountSetup(false)} className="flex-1 py-3 text-[11px] font-black uppercase text-app-text-muted hover:text-app-text transition-all">Cancel</button>
+                  )}
+                  <button onClick={handleRegisterAccount} className="flex-1 py-3 bg-[#3b82f6] text-white rounded-xl text-[11px] font-black uppercase shadow-lg shadow-blue-900/30">
+                    {language === 'km' ? 'រក្សាទុក' : 'Save Account'}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+
           {showSaveNaming && (
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -2013,8 +2182,8 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
                 className="bg-app-surface border border-app-border p-8 rounded-3xl w-full max-w-md shadow-2xl shadow-blue-500/10"
                 onClick={e => e.stopPropagation()}
               >
-                <h3 className="text-xl font-black text-app-text uppercase tracking-tight mb-2">Save Blueprint</h3>
-                <p className="text-[12px] text-app-text-muted mb-6 tracking-wide">Enter a name for your design to store it locally.</p>
+                <h3 className="text-xl font-black text-app-text uppercase tracking-tight mb-2">{language === 'km' ? 'រក្សាទុកគម្រោង' : 'Save Project'}</h3>
+                <p className="text-[12px] text-app-text-muted mb-6 tracking-wide">{language === 'km' ? 'ដាក់ឈ្មោះគម្រោង ដើម្បីមើលឡើងវិញនៅពេលក្រោយ។' : 'Enter a project name so you can reopen it later.'}</p>
                 <input 
                   autoFocus
                   className="w-full bg-app-bg border border-app-border px-4 py-3 rounded-xl text-app-text outline-none focus:border-[#3b82f6] transition-all mb-6"
@@ -2024,8 +2193,8 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
                   onKeyDown={e => e.key === 'Enter' && handleSaveDesign()}
                 />
                 <div className="flex gap-3">
-                  <button onClick={() => setShowSaveNaming(false)} className="flex-1 py-3 text-[11px] font-black uppercase text-app-text-muted hover:text-app-text transition-all">Cancel</button>
-                  <button onClick={handleSaveDesign} className="flex-1 py-3 bg-[#3b82f6] text-white rounded-xl text-[11px] font-black uppercase shadow-lg shadow-blue-900/30">Save Design</button>
+                  <button onClick={() => setShowSaveNaming(false)} className="flex-1 py-3 text-[11px] font-black uppercase text-app-text-muted hover:text-app-text transition-all">{language === 'km' ? 'បោះបង់' : 'Cancel'}</button>
+                  <button onClick={handleSaveDesign} className="flex-1 py-3 bg-[#3b82f6] text-white rounded-xl text-[11px] font-black uppercase shadow-lg shadow-blue-900/30">{language === 'km' ? 'រក្សាទុក' : 'Save Project'}</button>
                 </div>
               </motion.div>
             </motion.div>
@@ -2044,8 +2213,8 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
               >
                 <div className="flex items-center justify-between mb-8">
                   <div>
-                    <h3 className="text-xl font-black text-app-text uppercase tracking-tight">Saved Blueprints</h3>
-                    <p className="text-[12px] text-app-text-muted tracking-wide">Select a previous design to reload it.</p>
+                    <h3 className="text-xl font-black text-app-text uppercase tracking-tight">{language === 'km' ? 'គម្រោងដែលបានរក្សាទុក' : 'Saved Projects'}</h3>
+                    <p className="text-[12px] text-app-text-muted tracking-wide">{language === 'km' ? 'ជ្រើសរើសគម្រោងចាស់ ដើម្បីបើកមើល ឬកែបន្ត។' : 'Select a previous project to reopen and continue editing.'}</p>
                   </div>
                   <button onClick={() => setShowSavedList(false)} className="p-2 text-app-text-muted hover:text-app-text transition-all"><X className="w-5 h-5" /></button>
                 </div>
@@ -2054,7 +2223,7 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
                   {savedDesigns.length === 0 ? (
                     <div className="py-20 text-center opacity-20">
                       <Database className="w-12 h-12 mx-auto mb-4" />
-                      <p className="text-sm font-bold uppercase tracking-widest text-app-text">No Saved Blueprints</p>
+                      <p className="text-sm font-bold uppercase tracking-widest text-app-text">{language === 'km' ? 'មិនទាន់មានគម្រោង' : 'No Saved Projects'}</p>
                     </div>
                   ) : (
                     savedDesigns.map((d, i) => (
