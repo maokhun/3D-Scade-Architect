@@ -1,6 +1,6 @@
 {
   "name": "Remix: 3D OpenSCAD Architect",
-  "description": "Convert natural language and images into 3D printable STL files via parametric OpenSCAD scripts. Design, modify, and export 3D models using AI.",
-  "requestFramePermissions": [],
-  "majorCapabilities": []
+  "description": "Convert natural language and images into 3D printable STL files. Design, modify, and export 3D models and generate professional branding/visual assets using AI.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

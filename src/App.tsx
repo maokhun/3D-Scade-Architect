@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { lazy, Suspense, useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Suspense } from 'react';
 import { 
   Box, 
   Send, 
@@ -12,20 +12,29 @@ import {
   Trash2, 
   ChevronRight, 
   Code as CodeIcon,
-  Clipboard,
-  ClipboardCheck,
   Loader2,
+  FileDown,
   Monitor,
+  Maximize2,
   Layers,
   Cpu,
+  Camera,
+  AlertCircle,
+  BoxSelect,
   ArrowDown,
   Settings,
+  ClipboardCheck,
+  Clipboard,
   RefreshCw,
+  Info,
   Save,
+  User,
+  Share2,
   Command,
   HelpCircle,
   Package,
   Wrench,
+  Disc,
   Database,
   Wind,
   Undo2,
@@ -33,34 +42,22 @@ import {
   FolderOpen,
   Moon,
   Sun,
-  AlertTriangle,
-  Sparkles
+  ExternalLink,
+  X,
+  Play,
+  Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import type { ChatMessage } from './services/geminiService';
-import { executeJscad, getGeom3Solids } from './utils/jscadExecutor';
+import ReactMarkdown from 'react-markdown';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls, Grid, PerspectiveCamera, Environment, Float, Stage, Html } from '@react-three/drei';
+import * as THREE from 'three';
+import * as modeling from '@jscad/modeling';
+import { geminiService, ChatMessage } from './services/geminiService';
 
-const Preview3D = lazy(() => import('./components/Preview3D'));
-const ReactMarkdown = lazy(() => import('react-markdown'));
-
-function PreviewFallback() {
-  return (
-    <div className="h-full w-full bg-app-bg border border-app-border rounded-md flex items-center justify-center">
-      <div className="flex items-center gap-3 text-app-text-muted">
-        <Loader2 className="w-4 h-4 animate-spin text-[#3b82f6]" />
-        <span className="text-[10px] font-black uppercase tracking-widest">Loading 3D engine</span>
-      </div>
-    </div>
-  );
-}
-
-function MarkdownView({ children }: { children: string }) {
-  return (
-    <Suspense fallback={<span>{children}</span>}>
-      <ReactMarkdown>{children}</ReactMarkdown>
-    </Suspense>
-  );
-}
+import { JscadRenderer } from './components/JscadRenderer';
+import { VisionWorkspace } from './components/VisionWorkspace';
+import { BrandingWorkspace } from './components/BrandingWorkspace';
 
 const PART_LIBRARY = [
   {
@@ -114,6 +111,347 @@ const PART_LIBRARY = [
   }
 ];
 
+function ModelPlaceholder({ jscadCode, modelParams, onError }: { jscadCode: string | null; modelParams: any; onError?: (err: string) => void }) {
+  const meshRef = useRef<THREE.Mesh>(null!);
+  useFrame((state) => {
+    if (meshRef.current) {
+      meshRef.current.rotation.y = state.clock.getElapsedTime() * 0.3;
+    }
+  });
+
+  if (jscadCode) {
+    return (
+      <group rotation={[Math.PI / 2, 0, 0]}>
+        {/* 3D Printer Build Plate Representation (220 x 220 mm) */}
+        <group position={[0, 0, 0]}>
+          {/* Main PEI/Textured Dark Plate Slab */}
+          <mesh position={[0, 0, -1]}>
+            <boxGeometry args={[220, 220, 2]} />
+            <meshStandardMaterial 
+              color="#18181b" 
+              roughness={0.8} 
+              metalness={0.2} 
+            />
+          </mesh>
+
+          {/* Copper Heated Bed PCB Layer underneath */}
+          <mesh position={[0, 0, -2.1]}>
+            <boxGeometry args={[222, 222, 0.2]} />
+            <meshStandardMaterial 
+              color="#b45309"
+              roughness={0.4}
+              metalness={0.8}
+            />
+          </mesh>
+
+          {/* 10mm Spacing Calibration Grid */}
+          <gridHelper 
+            args={[220, 22, '#3b82f6', '#27272a']} 
+            rotation={[Math.PI / 2, 0, 0]}
+            position={[0, 0, 0.01]}
+          />
+
+          {/* Red 200x200 mm Safe Printable Area Boundary Box */}
+          <lineSegments position={[0, 0, 0.02]}>
+            <edgesGeometry args={[new THREE.BoxGeometry(200, 200, 0.01)]} />
+            <lineBasicMaterial color="#ef4444" transparent opacity={0.6} />
+          </lineSegments>
+
+          {/* Calibrated Corner Bracket Marks */}
+          {/* Top-Left */}
+          <group position={[-100, 100, 0.03]}>
+            <mesh position={[5, 0, 0]}>
+              <boxGeometry args={[10, 1.2, 0.01]} />
+              <meshBasicMaterial color="#f43f5e" />
+            </mesh>
+            <mesh position={[0, -5, 0]}>
+              <boxGeometry args={[1.2, 10, 0.01]} />
+              <meshBasicMaterial color="#f43f5e" />
+            </mesh>
+          </group>
+
+          {/* Top-Right */}
+          <group position={[100, 100, 0.03]}>
+            <mesh position={[-5, 0, 0]}>
+              <boxGeometry args={[10, 1.2, 0.01]} />
+              <meshBasicMaterial color="#f43f5e" />
+            </mesh>
+            <mesh position={[0, -5, 0]}>
+              <boxGeometry args={[1.2, 10, 0.01]} />
+              <meshBasicMaterial color="#f43f5e" />
+            </mesh>
+          </group>
+
+          {/* Bottom-Left */}
+          <group position={[-100, -100, 0.03]}>
+            <mesh position={[5, 0, 0]}>
+              <boxGeometry args={[10, 1.2, 0.01]} />
+              <meshBasicMaterial color="#f43f5e" />
+            </mesh>
+            <mesh position={[0, 5, 0]}>
+              <boxGeometry args={[1.2, 10, 0.01]} />
+              <meshBasicMaterial color="#f43f5e" />
+            </mesh>
+          </group>
+
+          {/* Bottom-Right */}
+          <group position={[100, -100, 0.03]}>
+            <mesh position={[-5, 0, 0]}>
+              <boxGeometry args={[10, 1.2, 0.01]} />
+              <meshBasicMaterial color="#f43f5e" />
+            </mesh>
+            <mesh position={[0, 5, 0]}>
+              <boxGeometry args={[1.2, 10, 0.01]} />
+              <meshBasicMaterial color="#f43f5e" />
+            </mesh>
+          </group>
+
+          {/* Measurement specs/labels badge */}
+          <Html center position={[0, -114, 0.05]}>
+            <div className="bg-zinc-950/90 text-zinc-100 border border-zinc-800 rounded px-2 py-0.5 text-[8px] font-black tracking-widest uppercase flex items-center gap-1 whitespace-nowrap shadow-2xl backdrop-blur select-none">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+              <span>220 x 220 mm PRINT PLATFORM</span>
+              <span className="text-zinc-500 font-mono text-[7px] ml-1">Z=0.0</span>
+            </div>
+          </Html>
+        </group>
+
+        {/* 3D Model Renderer */}
+        <JscadRenderer jscadCode={jscadCode} modelParams={modelParams} onError={onError} />
+      </group>
+    );
+  }
+
+  return (
+    <group>
+      <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
+        <mesh ref={meshRef}>
+          <octahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial color="#3b82f6" wireframe transparent opacity={0.3} />
+        </mesh>
+      </Float>
+      <Html center position={[0, -2, 0]}>
+        <div className="bg-app-surface/80 backdrop-blur px-4 py-2 rounded-lg border border-app-border whitespace-nowrap">
+           <p className="text-[10px] font-black uppercase tracking-widest text-app-text-muted">Waiting for 3D generation...</p>
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+function Preview3D({ isProcessing, jscadCode, modelParams, onExportStl, onExportScad, showGrid, toggleGrid, onError, renderError, t }: { 
+  isProcessing: boolean; 
+  jscadCode: string | null; 
+  modelParams: any;
+  onExportStl?: () => void; 
+  onExportScad?: () => void;
+  showGrid: boolean;
+  toggleGrid: () => void;
+  onError?: (err: string) => void; 
+  renderError: string | null;
+  t: any;
+}) {
+  return (
+    <div className="w-full h-full bg-app-bg relative rounded-md overflow-hidden border border-app-border group">
+      <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
+          <div className="bg-app-surface/60 backdrop-blur-md px-2.5 py-1 rounded-md border border-app-border flex items-center gap-2 shadow-xl">
+            <div className={`w-1.5 h-1.5 rounded-full ${isProcessing ? 'bg-[#3b82f6] animate-pulse' : renderError ? 'bg-red-500' : 'bg-emerald-500'}`}></div>
+            <span className="text-[9px] font-bold text-app-text-dim uppercase tracking-widest">
+               {isProcessing ? t.processing : renderError ? 'Error' : t.ready}
+            </span>
+         </div>
+         {renderError && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-2 rounded-md text-[9px] font-bold max-w-[180px] backdrop-blur-sm">
+               {renderError}
+            </div>
+         )}
+      </div>
+      
+      <div className="absolute bottom-3 right-3 z-10 flex flex-col items-end gap-3 translate-y-1 sm:opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200">
+         <div className="flex flex-col gap-1.5">
+            <button 
+              onClick={onExportStl}
+              disabled={!jscadCode}
+              className="flex items-center gap-2 bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-20 text-black px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-xl disabled:pointer-events-none"
+            >
+               <Download className="w-3.5 h-3.5" />
+               Download STL
+            </button>
+            <button 
+              onClick={onExportScad}
+              className="flex items-center gap-2 bg-app-surface hover:bg-app-surface-hover text-app-text px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border border-app-border shadow-xl hover:border-[#3b82f6]"
+            >
+               <CodeIcon className="w-3.5 h-3.5" />
+               Download SCAD
+            </button>
+         </div>
+
+         <div className="bg-app-surface/80 backdrop-blur-sm p-1 rounded-md border border-app-border flex gap-1 shadow-2xl">
+            <button 
+              onClick={toggleGrid}
+              className={`p-2 rounded-md transition-all ${showGrid ? 'bg-[#3b82f6] text-white' : 'hover:bg-app-surface-hover text-app-text-dim'}`}
+              title="Toggle Grid"
+            >
+              <BoxSelect className="w-3.5 h-3.5" />
+            </button>
+            <button className="p-2 hover:bg-app-surface-hover rounded-md transition-all text-app-text-dim" title="Maximize">
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+         </div>
+      </div>
+
+      <Canvas shadows>
+        <PerspectiveCamera makeDefault position={[15, 15, 15]} fov={45} />
+        <Suspense fallback={null}>
+          <Stage environment="city" intensity={0.2} shadows="contact">
+            <ModelPlaceholder jscadCode={jscadCode} modelParams={modelParams} onError={onError} />
+          </Stage>
+        </Suspense>
+        <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 1.75} />
+        {showGrid && (
+          <Grid 
+            infiniteGrid 
+            cellSize={2} 
+            sectionSize={10} 
+            sectionColor="#1e232d" 
+            cellColor="#0a0c10"
+            fadeDistance={50}
+            fadeStrength={3}
+          />
+        )}
+        <Environment preset="night" />
+      </Canvas>
+    </div>
+  );
+}
+
+const ChatCodeBlock = ({ children, className }: { children: any; className?: string }) => {
+  const [localCopied, setLocalCopied] = useState(false);
+  const codeValue = String(children).replace(/\n$/, '');
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(codeValue);
+    setLocalCopied(true);
+    setTimeout(() => setLocalCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group my-4">
+      <div className="flex items-center justify-between px-4 py-2 bg-[#1a1c23] border border-app-border rounded-t-xl text-[10px] font-bold uppercase text-app-text-muted tracking-widest">
+        <div className="flex items-center gap-2">
+          <CodeIcon className="w-3 h-3" />
+          <span>{className?.replace('language-', '') || 'code'}</span>
+        </div>
+        <button
+          onClick={handleCopy}
+          className="hover:text-app-text transition-colors flex items-center gap-1"
+        >
+          {localCopied ? <ClipboardCheck className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5 text-[#3b82f6]" />}
+          {localCopied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <div className="bg-[#0d0f14] p-4 rounded-b-xl border-x border-b border-app-border overflow-x-auto custom-scrollbar text-[12px] leading-relaxed font-mono">
+        <code className={className}>{children}</code>
+      </div>
+    </div>
+  );
+};
+
+// Types & Helper for Code Revision History Diffing
+export interface DiffLine {
+  type: 'added' | 'removed' | 'unchanged';
+  text: string;
+  lineNumberOld?: number;
+  lineNumberNew?: number;
+}
+
+export interface ScadRevision {
+  id: string;
+  timestamp: number;
+  scadCode: string;
+  jscadCode: string | null;
+  designAnalysis?: string | null;
+  modelParams?: Record<string, any>;
+  modelParamSpecs?: any[];
+  promptMessage: string;
+}
+
+export function diffLines(oldCode: string, newCode: string): DiffLine[] {
+  const oldLines = oldCode ? oldCode.split('\n') : [];
+  const newLines = newCode ? newCode.split('\n') : [];
+  const dp: number[][] = Array(oldLines.length + 1).fill(null).map(() => Array(newLines.length + 1).fill(0));
+
+  for (let i = 1; i <= oldLines.length; i++) {
+    for (let j = 1; j <= newLines.length; j++) {
+      if (oldLines[i - 1] === newLines[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  const result: DiffLine[] = [];
+  let i = oldLines.length;
+  let j = newLines.length;
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+      result.unshift({
+        type: 'unchanged',
+        text: oldLines[i - 1],
+        lineNumberOld: i,
+        lineNumberNew: j
+      });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      result.unshift({
+        type: 'added',
+        text: newLines[j - 1],
+        lineNumberNew: j
+      });
+      j--;
+    } else {
+      result.unshift({
+        type: 'removed',
+        text: oldLines[i - 1],
+        lineNumberOld: i
+      });
+      i--;
+    }
+  }
+
+  return result;
+}
+
+function getUpdatedScadCode(rawScad: string, params: Record<string, any>, specs: any[]): string {
+  if (!rawScad) return "";
+  let updated = rawScad;
+  specs.forEach(spec => {
+    const val = params[spec.name];
+    if (val !== undefined) {
+      if (typeof val === 'string') {
+        const regexStr = new RegExp(`^(\\s*${spec.name}\\s*=\\s*)["'][^"']*(["'])(;|\\s*;|$)`, 'm');
+        if (regexStr.test(updated)) {
+          updated = updated.replace(regexStr, `$1"${val}"$3`);
+        } else {
+          const regexGeneral = new RegExp(`^(\\s*${spec.name}\\s*=\\s*)[^;\\n]+(;|\\s*;|$)`, 'm');
+          if (regexGeneral.test(updated)) {
+            updated = updated.replace(regexGeneral, `$1"${val}"$2`);
+          }
+        }
+      } else {
+        const regex = new RegExp(`^(\\s*${spec.name}\\s*=\\s*)[^;\\n]+(;|\\s*;|$)`, 'm');
+        if (regex.test(updated)) {
+          updated = updated.replace(regex, `$1${val}$2`);
+        }
+      }
+    }
+  });
+  return updated;
+}
+
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -121,8 +459,33 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [currentScad, setCurrentScad] = useState<string | null>(null);
   const [currentJscad, setCurrentJscad] = useState<string | null>(null);
-  const [codeView, setCodeView] = useState<'jscad' | 'scad'>('jscad');
-  const [activeTab, setActiveTab] = useState<'chat' | 'engine' | 'blueprint' | 'params' | '3d'>('chat');
+
+  const [editorJscad, setEditorJscad] = useState<string>('');
+  const [editorScad, setEditorScad] = useState<string>('');
+  const [playgroundSubTab, setPlaygroundSubTab] = useState<'jscad' | 'scad'>('jscad');
+  const [showOchafikIframe, setShowOchafikIframe] = useState<boolean>(true);
+  const [isCompilingLocal, setIsCompilingLocal] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (currentJscad) {
+      setEditorJscad(currentJscad);
+    } else {
+      setEditorJscad('');
+    }
+  }, [currentJscad]);
+
+  useEffect(() => {
+    if (currentScad) {
+      setEditorScad(currentScad);
+    } else {
+      setEditorScad('');
+    }
+  }, [currentScad]);
+  const [activeTab, setActiveTab] = useState<'chat' | 'engine' | 'blueprint' | 'params' | '3d' | 'detect' | 'branding'>('chat');
+  const [revisions, setRevisions] = useState<ScadRevision[]>([]);
+  const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null);
+  const [previewRevisionId, setPreviewRevisionId] = useState<string | null>(null);
+  const [engineSubTab, setEngineSubTab] = useState<'code' | 'diff'>('code');
   const [lastUploadedImage, setLastUploadedImage] = useState<string | null>(null);
   const [conceptImages, setConceptImages] = useState<{prompt: string, url: string}[]>([]);
   const [designAnalysis, setDesignAnalysis] = useState<string | null>(null);
@@ -130,7 +493,55 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [isDesktopInspector, setIsDesktopInspector] = useState(false);
+
+  const [showChatCamera, setShowChatCamera] = useState(false);
+  const [chatCameraStream, setChatCameraStream] = useState<MediaStream | null>(null);
+  const [chatCameraError, setChatCameraError] = useState<string | null>(null);
+  const chatVideoRef = useRef<HTMLVideoElement>(null);
+
+  const startChatCamera = async () => {
+    setChatCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
+      });
+      setChatCameraStream(stream);
+      // Wait for next tick so ref is bound
+      setTimeout(() => {
+        if (chatVideoRef.current) {
+          chatVideoRef.current.srcObject = stream;
+        }
+      }, 50);
+    } catch (err: any) {
+      console.error("Error accessing chat camera:", err);
+      setChatCameraError(
+        language === 'km' 
+          ? "មិនអាចបើកកាមេរ៉ាបានទេ! សូមពិនិត្យមើលសិទ្ធិអនុញ្ញាតកាមេរ៉ា។" 
+          : "Could not access webcam. Please ensure frame permissions are granted in your browser."
+      );
+    }
+  };
+
+  const stopChatCamera = () => {
+    if (chatCameraStream) {
+      chatCameraStream.getTracks().forEach(track => track.stop());
+      setChatCameraStream(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!showChatCamera) {
+      stopChatCamera();
+    }
+  }, [showChatCamera]);
+
+  useEffect(() => {
+    return () => {
+      if (chatCameraStream) {
+        chatCameraStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [chatCameraStream]);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('3d_architect_theme');
@@ -141,24 +552,110 @@ export default function App() {
     localStorage.setItem('3d_architect_theme', theme);
   }, [theme]);
 
+  // Synchronize SCAD revisions with changes to currentScad
   useEffect(() => {
-    const media = window.matchMedia('(min-width: 1280px)');
-    const update = () => setIsDesktopInspector(media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
+    if (!currentScad) return;
+
+    setRevisions(prev => {
+      // Identify duplicates
+      const lastRevision = prev.find(r => r.scadCode === currentScad);
+      if (lastRevision) {
+        return prev;
+      }
+
+      // Get last user prompt as action summary
+      let promptMessage = "";
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          promptMessage = messages[i].parts.map(p => p.text).join(' ');
+          break;
+        }
+      }
+
+      if (!promptMessage) {
+        promptMessage = "Base Design Outline";
+      } else if (promptMessage.length > 45) {
+        promptMessage = promptMessage.substring(0, 45) + "...";
+      }
+
+      const newRev: ScadRevision = {
+        id: `rev-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        timestamp: Date.now(),
+        scadCode: currentScad,
+        jscadCode: currentJscad,
+        designAnalysis,
+        modelParams,
+        modelParamSpecs,
+        promptMessage
+      };
+
+      const newRevs = [...prev, newRev];
+      if (newRevs.length > 30) {
+        newRevs.shift();
+      }
+      return newRevs;
+    });
+  }, [currentScad]);
+
+  // Synchronize selectedRevisionId and previewRevisionId
+  useEffect(() => {
+    if (currentScad && revisions.length > 0) {
+      const matched = revisions.find(r => r.scadCode === currentScad);
+      if (matched) {
+        setSelectedRevisionId(matched.id);
+        setPreviewRevisionId(matched.id);
+      }
+    }
+  }, [currentScad, revisions]);
+
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [renderError, setRenderError] = useState<string | null>(null);
-  const [generationError, setGenerationError] = useState<string | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState<string>('');
   const [modelParams, setModelParams] = useState<Record<string, any>>({});
   const [modelParamSpecs, setModelParamSpecs] = useState<any[]>([]);
   const [copied, setCopied] = useState(false);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [language, setLanguage] = useState<'en' | 'km'>('en');
+  const [showCopyNotice, setShowCopyNotice] = useState(false);
+
+  const [iframeUrl, setIframeUrl] = useState<string>('https://ochafik.com/openscad/');
+  const [debouncedIframeUrl, setDebouncedIframeUrl] = useState<string>('https://ochafik.com/openscad/');
+  const lastScadRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isLoading && currentScad) {
+      const updatedCode = getUpdatedScadCode(currentScad, modelParams, modelParamSpecs);
+      const nextUrl = `https://ochafik.com/openscad/#code=${encodeURIComponent(updatedCode)}`;
+      setIframeUrl(nextUrl);
+    } else if (!currentScad) {
+      setIframeUrl('https://ochafik.com/openscad/');
+    }
+  }, [isLoading, currentScad, modelParams, modelParamSpecs]);
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const updatedCode = currentScad ? getUpdatedScadCode(currentScad, modelParams, modelParamSpecs) : "";
+    const nextUrl = currentScad 
+      ? `https://ochafik.com/openscad/#code=${encodeURIComponent(updatedCode)}` 
+      : 'https://ochafik.com/openscad/';
+
+    const isNewScadCode = lastScadRef.current !== currentScad;
+    lastScadRef.current = currentScad;
+
+    // Use a very short delay (50ms) for newly generated SCAD codes so they load immediately,
+    // and a friendly delay (850ms) for slider modifications so we do not constantly reload while dragging.
+    const delay = isNewScadCode ? 50 : 850;
+
+    const handler = setTimeout(() => {
+      setDebouncedIframeUrl(nextUrl);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [isLoading, currentScad, modelParams, modelParamSpecs]);
 
   // History & Persistence
   const [history, setHistory] = useState<any[]>([]);
@@ -167,6 +664,8 @@ export default function App() {
   const [showSavedList, setShowSavedList] = useState(false);
   const [showSaveNaming, setShowSaveNaming] = useState(false);
   const [designName, setDesignName] = useState('New Design');
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  const [engineView, setEngineView] = useState<'jscad' | 'scad'>('jscad');
 
   useEffect(() => {
     const saved = localStorage.getItem('3d_architect_saved_designs');
@@ -210,6 +709,153 @@ export default function App() {
       setHistoryIndex(newIndex);
       applyHistoryState(history[newIndex]);
     }
+  };
+
+  const handleRenderPlaygroundCode = () => {
+    setIsCompilingLocal(true);
+    setRenderError(null);
+    setTimeout(() => {
+      try {
+        if (playgroundSubTab === 'jscad') {
+          // Verify code runs by creating a function from it test
+          const positiveKeys = [
+            'size', 'radius', 'height', 'width', 'length', 
+            'radiusStart', 'radiusEnd', 'innerRadius', 'outerRadius', 
+            'roundRadius', 'thickness', 'depth', 'offset', 'expand', 'delta'
+          ];
+          const sanitizeOptions = (obj: any): any => {
+            if (!obj || typeof obj !== 'object') return obj;
+            const newObj = { ...obj };
+            for (const key in newObj) {
+              if (positiveKeys.includes(key) && typeof newObj[key] === 'number') {
+                newObj[key] = Math.max(0.001, newObj[key]);
+              }
+            }
+            return newObj;
+          };
+
+          const candidates: string[] = ['main', 'defaultExport', 'Main', 'main_model', 'render'];
+          if (editorJscad) {
+            const funcDeclRegex = /\bfunction\s+([a-zA-Z0-9_]+)\s*\(/g;
+            const varDeclRegex = /\b(?:const|let|var|export)\s+([a-zA-Z0-9_]+)\s*=\s*(?:\([^)]*\)|[a-zA-Z0-9_]+)\s*=>/g;
+            const funcExprRegex = /\b(?:const|let|var|export)\s+([a-zA-Z0-9_]+)\s*=\s*function/g;
+            let match;
+            while ((match = funcDeclRegex.exec(editorJscad)) !== null) {
+              if (!candidates.includes(match[1]) && match[1] !== 'require' && match[1] !== 'modeling') {
+                candidates.push(match[1]);
+              }
+            }
+            while ((match = varDeclRegex.exec(editorJscad)) !== null) {
+              if (!candidates.includes(match[1]) && match[1] !== 'require' && match[1] !== 'modeling') {
+                candidates.push(match[1]);
+              }
+            }
+            while ((match = funcExprRegex.exec(editorJscad)) !== null) {
+              if (!candidates.includes(match[1]) && match[1] !== 'require' && match[1] !== 'modeling') {
+                candidates.push(match[1]);
+              }
+            }
+          }
+
+          const script = `
+            var require = (pkg) => pkg === '@jscad/modeling' ? modeling : {};
+            var module = { exports: {} };
+            var exports = module.exports;
+            var { primitives, extrusions, transforms, booleans, colors, expansions, geometries, hulls, measurements, mathematics, utils } = modeling;
+            ${editorJscad
+              .replace(/import\s+[\s\S]*?from\s+['"].*?['"];?/g, '')
+              .replace(/\bexport\s+default\s+/g, 'var defaultExport = ')
+              .replace(/\bexport\s+(const|let|var)\s+/g, 'var ')
+              .replace(/\bexport\s+function\s+/g, 'function ')
+              .replace(/\bexport\s+class\s+/g, 'class ')
+              .replace(/\bexport\s+\{[\s\S]*?\};?/g, '')
+              .replace(/\bconst\b/g, 'var')
+              .replace(/\blet\b/g, 'var')
+            }
+            var finalMain = null;
+            if (typeof main !== 'undefined' && typeof main === 'function') {
+              finalMain = main;
+            } else if (typeof defaultExport !== 'undefined' && typeof defaultExport === 'function') {
+              finalMain = defaultExport;
+            } else if (typeof module !== 'undefined' && module.exports) {
+              if (typeof module.exports === 'function') {
+                finalMain = module.exports;
+              } else if (typeof module.exports.main === 'function') {
+                finalMain = module.exports.main;
+              } else if (typeof module.exports.default === 'function') {
+                finalMain = module.exports.default;
+              }
+            }
+            if (!finalMain && typeof exports !== 'undefined') {
+              if (typeof exports === 'function') {
+                finalMain = exports;
+              } else if (typeof exports.main === 'function') {
+                finalMain = exports.main;
+              } else if (typeof exports.default === 'function') {
+                finalMain = exports.default;
+              }
+            }
+
+            // Fallback candidate lookup
+            ${candidates.map(name => `
+            if (!finalMain && typeof ${name} !== 'undefined' && typeof ${name} === 'function') {
+              finalMain = ${name};
+            }
+            `).join('\n')}
+            
+            if (typeof finalMain !== 'function') throw new Error('JSCAD main function not found. Please ensure your script contains a \"function main()\" or \"export const main = ...\" declaration at the top level.');
+            return finalMain(modelParams);
+          `;
+          // Evaluate immediately to verify compilation syntax
+          const testFunc = new Function('modeling', 'modelParams', script);
+          testFunc(modeling, modelParams);
+
+          setCurrentJscad(editorJscad);
+          
+          setRevisions(prev => prev.map(rev => {
+            if (rev.id === selectedRevisionId) {
+              return { ...rev, jscadCode: editorJscad };
+            }
+            return rev;
+          }));
+        } else {
+          setCurrentScad(editorScad);
+          setRevisions(prev => prev.map(rev => {
+            if (rev.id === selectedRevisionId) {
+              return { ...rev, scadCode: editorScad };
+            }
+            return rev;
+          }));
+        }
+      } catch (err: any) {
+        console.error("Local compile error:", err);
+        setRenderError(err?.message || "Local compilation syntax error");
+      } finally {
+        setIsCompilingLocal(false);
+      }
+    }, 300);
+  };
+
+  const handleRevertToRevision = (revision: ScadRevision) => {
+    setCurrentScad(revision.scadCode);
+    setCurrentJscad(revision.jscadCode);
+    if (revision.designAnalysis) setDesignAnalysis(revision.designAnalysis);
+    if (revision.modelParams) setModelParams(revision.modelParams);
+    if (revision.modelParamSpecs) setModelParamSpecs(revision.modelParamSpecs);
+
+    // Sync preview selection as well
+    setPreviewRevisionId(revision.id);
+
+    // Push into active undo/redo stack
+    const currentState = {
+      messages,
+      currentScad: revision.scadCode,
+      currentJscad: revision.jscadCode,
+      designAnalysis: revision.designAnalysis || designAnalysis,
+      modelParams: revision.modelParams || modelParams,
+      modelParamSpecs: revision.modelParamSpecs || modelParamSpecs
+    };
+    pushToHistory(currentState);
   };
 
   const handleSaveDesign = () => {
@@ -363,33 +1009,11 @@ export default function App() {
     }
   };
 
-  const inferPartModeSpec = (scadCode?: string, jscadCode?: string) => {
-    const source = `${scadCode || ''}\n${jscadCode || ''}`;
-    const commentMatch = source.match(/part_mode\s*=\s*["'][^"']+["']\s*;\s*\/\/\s*\[([^\]]+)\]/i);
-    const options = commentMatch
-      ? commentMatch[1].split(',').map(option => option.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
-      : source.includes('part_mode')
-        ? ['all', 'separate']
-        : [];
-
-    if (options.length === 0) return null;
-
-    return {
-      name: 'part_mode',
-      label: 'Part Mode',
-      type: 'select',
-      default: options.includes('all') ? 'all' : options[0],
-      options
-    };
-  };
-
   const handleSend = async (overrideInput?: string) => {
     const textToSend = overrideInput || input;
     if (!textToSend.trim() && !selectedImage) return;
 
     setRenderError(null);
-    setGenerationError(null);
-    setExportError(null);
     const newParts: any[] = [];
     if (textToSend.trim()) {
       const languageInstruction = language === 'km' ? "កំណត់សម្គាល់៖ សូមឆ្លើយតបជាភាសាខ្មែរ ចំពោះការវិភាគ និងការពន្យល់។\n\n" : "";
@@ -417,8 +1041,51 @@ export default function App() {
 
     try {
       setLoadingStep(t.generating || 'Thinking...');
-      const { geminiService } = await import('./services/geminiService');
-      const response = await geminiService.generate3DCode([...messages, newUserMessage], selectedModel);
+
+      // Prepare context to supply Gemini with the active model and parameters
+      const activeScad = editorScad || currentScad;
+      const activeJscad = editorJscad || currentJscad;
+      let apiParts = [...newParts];
+      
+      if (activeScad || activeJscad) {
+        const contextText = `\n\n---
+[CURRENT ACTIVE 3D MODEL STATE - CRITICAL SYSTEM DIRECTIVE]
+The user is currently viewing, evaluating, or customizing the 3D model shown below.
+If the user's request is an edit, adjustment, addition, continuation, or refinement (such as adding holes, modifying dimensions, adding/modifying lids, or adjusting features of the existing model), you MUST build directly upon this existing code.
+- DO NOT start a completely new design from scratch unless explicitly requested.
+- Preserve the existing variable names, parameters structure, and core logic as much as possible to ensure continuity.
+- Update BOTH the OpenSCAD (.scad) and JSCAD (.jscad) code to reflect the requested adjustments.
+- Retain existing parametric parameters, and add new ones if new customizable features are introduced.
+
+Current OpenSCAD (.scad) Code:
+\`\`\`scad
+${activeScad || ""}
+\`\`\`
+
+Current JSCAD (.jscad) Code:
+\`\`\`jscad
+${activeJscad || ""}
+\`\`\`
+
+Current Parameter Specifications:
+${modelParamSpecs ? JSON.stringify(modelParamSpecs, null, 2) : "None"}
+
+Current Active Parameter Values:
+${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
+
+        if (apiParts.length > 0 && apiParts[0].text) {
+          apiParts[0] = { ...apiParts[0], text: apiParts[0].text + contextText };
+        } else {
+          apiParts.push({ text: contextText });
+        }
+      }
+
+      const apiUserMessage: ChatMessage = {
+        role: 'user',
+        parts: apiParts
+      };
+
+      const response = await geminiService.generate3DCode([...messages, apiUserMessage], selectedModel);
       
       if (!response) throw new Error("Empty response from AI.");
 
@@ -429,44 +1096,34 @@ export default function App() {
       setMessages(prev => [...prev, assistantMessage]);
       
       // Extract code
-      const scadMatch = response.match(/```scad([\s\S]*?)```/i);
-      const nextScad = scadMatch ? scadMatch[1].trim() : null;
-      if (nextScad) setCurrentScad(nextScad);
+      const scadMatch = response.match(/```scad([\s\S]*?)```/);
+      if (scadMatch) {
+         const code = scadMatch[1].trim();
+         setCurrentScad(code);
+         setShowCopyNotice(true);
+         setTimeout(() => {
+            setShowCopyNotice(false);
+         }, 12000);
+      }
 
-      const jscadMatch = response.match(/```(?:jscad|javascript|js)([\s\S]*?)```/i);
-      const nextJscad = jscadMatch ? jscadMatch[1].trim() : null;
-      if (nextJscad) setCurrentJscad(nextJscad);
+      const jscadMatch = response.match(/```jscad([\s\S]*?)```/);
+      if (jscadMatch) setCurrentJscad(jscadMatch[1].trim());
 
       // Extract parameters
-      const paramsMatch = response.match(/```json([\s\S]*?)```/i);
-      let parsedSpecs: any[] | null = null;
+      const paramsMatch = response.match(/```json([\s\S]*?)```/);
       if (paramsMatch) {
          try {
             const specs = JSON.parse(paramsMatch[1].trim());
             if (Array.isArray(specs)) {
-               parsedSpecs = specs;
-             }
-          } catch (e) {
-             console.warn("Failed to parse parameters JSON", e);
-          }
-      }
-
-      if (parsedSpecs) {
-         const partModeSpec = inferPartModeSpec(nextScad || undefined, nextJscad || undefined);
-         const specsWithPartMode = partModeSpec && !parsedSpecs.some(s => s.name === 'part_mode')
-           ? [partModeSpec, ...parsedSpecs]
-           : parsedSpecs;
-         setModelParamSpecs(specsWithPartMode);
-         const initialParams: Record<string, any> = {};
-         specsWithPartMode.forEach(s => {
-            initialParams[s.name] = s.default ?? (s.type === 'select' ? s.options?.[0] : 0);
-         });
-         setModelParams(initialParams);
-      } else {
-         const partModeSpec = inferPartModeSpec(nextScad || undefined, nextJscad || undefined);
-         if (partModeSpec) {
-            setModelParamSpecs([partModeSpec]);
-            setModelParams({ part_mode: partModeSpec.default });
+               setModelParamSpecs(specs);
+               const initialParams: Record<string, any> = {};
+               specs.forEach(s => {
+                  initialParams[s.name] = s.default;
+               });
+               setModelParams(initialParams);
+            }
+         } catch (e) {
+            console.warn("Failed to parse parameters JSON", e);
          }
       }
 
@@ -488,50 +1145,97 @@ export default function App() {
       
     } catch (error: any) {
       console.error(error);
-      setGenerationError(error?.message || 'Failed to generate model');
-      setActiveTab('chat');
+      alert(`Error: ${error?.message || 'Failed to generate model'}`);
     } finally {
       setIsLoading(false);
       setLoadingStep('');
     }
   };
 
-  const handleRepairModel = () => {
-    if (!currentJscad || isLoading) return;
-    const repairPrompt = `The current JSCAD failed to render with this error: ${renderError || 'unknown render error'}.
-
-Rewrite the design as valid JSCAD V2 using @jscad/modeling. Return a complete response with a short design analysis, a JSON parameters block, a SCAD block, and a JSCAD block. The JSCAD main function must be export const main = (params = {}) => { ... } and it must return a valid 3D solid.
-
-Current broken JSCAD:
-\`\`\`jscad
-${currentJscad}
-\`\`\``;
-    handleSend(repairPrompt);
-  };
-
-  const handleRerender = () => {
-    if (!currentJscad) return;
-    const code = currentJscad;
-    setRenderError(null);
-    setCurrentJscad(null);
-    requestAnimationFrame(() => setCurrentJscad(code));
-  };
-
   const exportStl = async () => {
     if (!currentJscad) return;
     try {
-      setExportError(null);
       const jscadStlSerializer = await import('@jscad/stl-serializer');
-      const mod = await import('@jscad/modeling');
-
-      const result = executeJscad(currentJscad, modelParams, mod);
-      const serializable = getGeom3Solids(result, mod);
-
-      if (serializable.length === 0) {
-        throw new Error('The generated model is not a valid 3D solid for STL export.');
+      
+      const serialize = jscadStlSerializer.serialize;
+      
+      const candidates: string[] = ['main', 'defaultExport', 'Main', 'main_model', 'render'];
+      if (currentJscad) {
+        const funcDeclRegex = /\bfunction\s+([a-zA-Z0-9_]+)\s*\(/g;
+        const varDeclRegex = /\b(?:const|let|var|export)\s+([a-zA-Z0-9_]+)\s*=\s*(?:\([^)]*\)|[a-zA-Z0-9_]+)\s*=>/g;
+        const funcExprRegex = /\b(?:const|let|var|export)\s+([a-zA-Z0-9_]+)\s*=\s*function/g;
+        let match;
+        while ((match = funcDeclRegex.exec(currentJscad)) !== null) {
+          if (!candidates.includes(match[1]) && match[1] !== 'require' && match[1] !== 'modeling') {
+            candidates.push(match[1]);
+          }
+        }
+        while ((match = varDeclRegex.exec(currentJscad)) !== null) {
+          if (!candidates.includes(match[1]) && match[1] !== 'require' && match[1] !== 'modeling') {
+            candidates.push(match[1]);
+          }
+        }
+        while ((match = funcExprRegex.exec(currentJscad)) !== null) {
+          if (!candidates.includes(match[1]) && match[1] !== 'require' && match[1] !== 'modeling') {
+            candidates.push(match[1]);
+          }
+        }
       }
 
-      const rawData = jscadStlSerializer.serialize({ binary: true }, ...serializable);
+      const script = `
+        var require = (pkg) => pkg === '@jscad/modeling' ? modeling : {};
+        var module = { exports: {} };
+        var exports = module.exports;
+        var { primitives, extrusions, transforms, booleans, colors, expansions, geometries, hulls, measurements, mathematics, utils } = modeling;
+        ${currentJscad
+          .replace(/import\s+[\s\S]*?from\s+['"].*?['"];?/g, '')
+          .replace(/\bexport\s+default\s+/g, 'var defaultExport = ')
+          .replace(/\bexport\s+(const|let|var)\s+/g, 'var ')
+          .replace(/\bexport\s+function\s+/g, 'function ')
+          .replace(/\bexport\s+class\s+/g, 'class ')
+          .replace(/\bexport\s+\{[\s\S]*?\};?/g, '')
+          .replace(/\bconst\b/g, 'var')
+          .replace(/\blet\b/g, 'var')
+        }
+        var finalMain = null;
+        if (typeof main !== 'undefined' && typeof main === 'function') {
+          finalMain = main;
+        } else if (typeof defaultExport !== 'undefined' && typeof defaultExport === 'function') {
+          finalMain = defaultExport;
+        } else if (typeof module !== 'undefined' && module.exports) {
+          if (typeof module.exports === 'function') {
+            finalMain = module.exports;
+          } else if (typeof module.exports.main === 'function') {
+            finalMain = module.exports.main;
+          } else if (typeof module.exports.default === 'function') {
+            finalMain = module.exports.default;
+          }
+        }
+        if (!finalMain && typeof exports !== 'undefined') {
+          if (typeof exports === 'function') {
+            finalMain = exports;
+          } else if (typeof exports.main === 'function') {
+            finalMain = exports.main;
+          } else if (typeof exports.default === 'function') {
+            finalMain = exports.default;
+          }
+        }
+
+        // Fallback candidate lookup
+        ${candidates.map(name => `
+        if (!finalMain && typeof ${name} !== 'undefined' && typeof ${name} === 'function') {
+          finalMain = ${name};
+        }
+        `).join('\n')}
+
+        if (typeof finalMain !== 'function') throw new Error('JSCAD main function not found');
+        return finalMain(modelParams);
+      `;
+
+      const mainFunc = new Function('modeling', 'modelParams', script);
+      const result = mainFunc(modeling, modelParams);
+      
+      const rawData = serialize({ binary: true }, result);
       const blob = new Blob(rawData, { type: 'application/sla' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -539,11 +1243,9 @@ ${currentJscad}
       a.download = `3d-model-${Date.now()}.stl`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      const message = err?.message || 'STL Export failed.';
-      setExportError(message);
-      setRenderError(`STL export failed: ${message}`);
+      alert('STL Export failed.');
     }
   };
 
@@ -559,38 +1261,46 @@ ${currentJscad}
   };
 
   return (
-    <div className={`flex h-dvh bg-app-bg text-app-text-dim ${language === 'km' ? 'font-khmer' : 'font-sans'} overflow-hidden select-none ${theme === 'light' ? 'light' : ''}`}>
+    <div className={`flex h-screen bg-app-bg text-app-text-dim ${language === 'km' ? 'font-khmer' : 'font-sans'} overflow-hidden select-none ${theme === 'light' ? 'light' : ''}`}>
        {/* Slim Tool Sidebar */}
-       <div className="flex w-12 sm:w-16 border-r border-app-border flex-col items-center py-3 sm:py-6 bg-app-bg gap-4 sm:gap-8 shrink-0">
-          <div className="p-2 sm:p-2.5 bg-[#3b82f6] rounded-xl shadow-lg shadow-blue-500/20">
-             <Box className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+       <div className={`fixed inset-0 z-50 lg:relative lg:flex lg:w-16 border-r border-app-border flex flex-col items-center py-6 bg-app-bg gap-8 shrink-0 transition-transform duration-300 ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+          <div className="absolute top-4 right-[-40px] lg:hidden">
+             <button 
+               onClick={() => setShowMobileSidebar(!showMobileSidebar)}
+               className="p-2 bg-app-surface border border-app-border rounded-r-md text-app-text-muted"
+             >
+               {showMobileSidebar ? <Trash2 className="w-5 h-5 rotate-45" /> : <ChevronRight className="w-5 h-5" />}
+             </button>
           </div>
-          <div className="flex flex-col gap-2 sm:gap-4">
+          <div className="p-2.5 bg-[#3b82f6] rounded-xl shadow-lg shadow-blue-500/20">
+             <Box className="w-6 h-6 text-white" />
+          </div>
+          <div className="flex flex-col gap-4">
              <button 
                onClick={() => setExpandedCategory(expandedCategory ? null : PART_LIBRARY[0].category)}
-               className={`p-2.5 sm:p-3 rounded-xl transition-all ${expandedCategory ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
+               className={`p-3 rounded-xl transition-all ${expandedCategory ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
                title="Components Library"
              >
-               <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
+               <Layers className="w-6 h-6" />
              </button>
              <button 
                onClick={() => setShowShortcuts(!showShortcuts)}
-               className={`p-2.5 sm:p-3 rounded-xl transition-all ${showShortcuts ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
+               className={`p-3 rounded-xl transition-all ${showShortcuts ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
                title="Keyboard Shortcuts"
              >
-               <Command className="w-5 h-5 sm:w-6 sm:h-6" />
+               <Command className="w-6 h-6" />
              </button>
              <button 
                onClick={() => setShowSettings(true)}
-               className={`p-2.5 sm:p-3 rounded-xl transition-all ${showSettings ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
+               className={`p-3 rounded-xl transition-all ${showSettings ? 'bg-[#11131a] text-[#3b82f6]' : 'text-[#52525b] hover:text-[#3b82f6] hover:bg-[#11131a]'}`}
                title="System Settings"
              >
-               <Settings className="w-5 h-5 sm:w-6 sm:h-6" />
+               <Settings className="w-6 h-6" />
              </button>
           </div>
-          <div className="mt-auto flex flex-col gap-2 sm:gap-4">
-             <button className="p-2.5 sm:p-3 rounded-xl hover:bg-app-surface text-app-text-muted hover:text-app-text transition-all"><HelpCircle className="w-5 h-5 sm:w-6 sm:h-6" /></button>
-             <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#3b82f6] flex items-center justify-center text-white text-[9px] sm:text-[10px] font-bold">MK</div>
+          <div className="mt-auto flex flex-col gap-4">
+             <button className="p-3 rounded-xl hover:bg-app-surface text-app-text-muted hover:text-app-text transition-all"><HelpCircle className="w-6 h-6" /></button>
+             <div className="w-8 h-8 rounded-full bg-[#3b82f6] flex items-center justify-center text-white text-[10px] font-bold">MK</div>
           </div>
        </div>
 
@@ -656,64 +1366,19 @@ ${currentJscad}
         </div>
       </div>
 
-      <AnimatePresence>
-        {expandedCategory && (
-          <motion.div
-            initial={{ opacity: 0, x: -16 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -16 }}
-            className="lg:hidden fixed left-12 top-0 bottom-0 z-40 w-[min(320px,calc(100vw-3rem))] bg-app-bg border-r border-app-border shadow-2xl overflow-y-auto custom-scrollbar"
-          >
-            <div className="p-4 border-b border-app-border flex items-center justify-between">
-              <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-app-text-muted">{t.library}</h2>
-              <button onClick={() => setExpandedCategory(null)} className="p-2 rounded-lg text-app-text-muted hover:text-app-text hover:bg-app-surface">
-                <Trash2 className="w-4 h-4 rotate-45" />
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              {PART_LIBRARY.map((entry, i) => (
-                <div key={i} className="rounded-xl border border-app-border bg-app-surface overflow-hidden">
-                  <button
-                    onClick={() => setExpandedCategory(expandedCategory === entry.category ? PART_LIBRARY[0].category : entry.category)}
-                    className="w-full flex items-center gap-3 p-4 text-left"
-                  >
-                    <div className={`p-2 rounded-lg ${entry.color}`}>
-                      {entry.icon}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[12px] font-bold text-app-text truncate">{entry.category}</p>
-                      <p className="text-[9px] text-app-text-muted mt-0.5">{entry.prompts.length} Modules</p>
-                    </div>
-                    <ChevronRight className={`w-3.5 h-3.5 transition-transform text-app-text-muted ${expandedCategory === entry.category ? 'rotate-90' : ''}`} />
-                  </button>
-                  {expandedCategory === entry.category && (
-                    <div className="px-3 pb-3 space-y-1">
-                      {entry.prompts.map((p, j) => (
-                        <button
-                          key={j}
-                          onClick={() => { setExpandedCategory(null); setInput(p.prompt); handleSend(p.prompt); }}
-                          className="w-full text-left px-3 py-2 rounded-lg hover:bg-app-surface-hover group flex items-center gap-2 transition-all"
-                        >
-                          <div className="w-1 h-1 rounded-full bg-app-border group-hover:bg-[#3b82f6]" />
-                          <span className="text-[11px] font-medium text-app-text-muted group-hover:text-app-text transition-colors">{p.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Workspace Area */}
       <div className="flex-1 flex flex-col min-w-0 bg-app-bg relative">
-        <header className="min-h-14 border-b border-app-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-6 py-2 sm:py-0 shrink-0 bg-app-bg z-20">
-           <div className="flex w-full sm:w-auto min-w-0 items-center gap-2 sm:gap-6 flex-wrap sm:flex-nowrap">
-              <div className="flex items-center gap-2 min-w-0">
+        <header className="h-auto min-h-[3.5rem] border-b border-app-border flex flex-col sm:flex-row items-center justify-between px-4 py-2 sm:py-0 gap-4 shrink-0 bg-app-bg z-20">
+           <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 w-full sm:w-auto">
+              <div className="flex items-center gap-2">
+                 <button 
+                   onClick={() => setShowMobileSidebar(!showMobileSidebar)}
+                   className="lg:hidden p-1.5 rounded-md hover:bg-app-surface text-app-text-muted"
+                 >
+                   <Package className="w-5 h-5" />
+                 </button>
                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                 <h1 className={`font-black text-xs sm:text-sm tracking-widest text-app-text uppercase truncate max-w-[150px] sm:max-w-none ${language === 'km' ? 'font-khmer-title' : 'font-sans'}`}>Untitled Design_v1.4</h1>
+                 <h1 className={`font-black text-xs sm:text-sm tracking-widest text-app-text uppercase ${language === 'km' ? 'font-khmer-title' : 'font-sans'}`}>Untitled Design_v1.4</h1>
               </div>
 
               <div className="flex items-center gap-1 border-l border-r border-app-border px-2 sm:px-4 h-8">
@@ -735,18 +1400,20 @@ ${currentJscad}
                  </button>
               </div>
 
-              <div className="order-3 sm:order-none w-full sm:w-auto flex items-center gap-1 bg-app-surface p-1 rounded-lg overflow-x-auto scrollbar-hide">
+              <div className="flex items-center gap-1 bg-app-surface p-1 rounded-lg overflow-x-auto max-w-full scrollbar-hide py-1">
                 {[
-                  { id: '3d', label: language === 'km' ? '3D' : '3D View' },
+                  { id: '3d', label: language === 'km' ? 'កម្មវិធីមើល 3D (ochafik)' : 'OpenSCAD Viewer' },
                   { id: 'chat', label: language === 'km' ? 'ជជែក' : 'Chat' },
                   { id: 'engine', label: language === 'km' ? 'កូដ' : 'Engine' },
                   { id: 'blueprint', label: language === 'km' ? 'ប្លង់មេ' : 'Blueprint' },
-                  { id: 'params', label: language === 'km' ? 'កែសម្រួល' : 'Params' }
+                  { id: 'params', label: language === 'km' ? 'កែសម្រួល' : 'Params' },
+                  { id: 'detect', label: language === 'km' ? 'សម្គាល់វត្ថុ' : 'Vision Detector' },
+                  { id: 'branding', label: language === 'km' ? 'ម៉ាកផលិតផល' : 'Branding & Assets' }
                 ].map(tab => (
                   <button 
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as any)}
-                    className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${activeTab === tab.id ? 'bg-[#3b82f6] text-white shadow-sm border border-[#3b82f6]' : 'text-app-text-muted hover:text-app-text-dim'}`}
+                    className={`px-3 sm:px-4 py-1 sm:py-1.5 rounded-md text-[9px] sm:text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-[#3b82f6] text-white shadow-sm border border-[#3b82f6]' : 'text-app-text-muted hover:text-app-text-dim'}`}
                   >
                     {tab.label}
                   </button>
@@ -754,7 +1421,7 @@ ${currentJscad}
               </div>
            </div>
            
-           <div className="flex w-full sm:w-auto items-center justify-end gap-2 sm:gap-3 overflow-x-auto scrollbar-hide">
+           <div className="flex items-center gap-3">
               <button 
                 onClick={() => setShowSavedList(true)}
                 className="p-2 rounded-lg hover:bg-app-surface text-app-text-muted hover:text-app-text transition-all"
@@ -773,18 +1440,18 @@ ${currentJscad}
               <button 
                 onClick={exportScad}
                 disabled={!currentScad}
-                className="flex items-center gap-2 bg-app-surface hover:bg-app-surface-hover disabled:opacity-20 text-app-text-dim px-3 sm:px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border border-app-border shrink-0"
+                className="hidden"
               >
                  <CodeIcon className="w-4 h-4" />
-                 <span className="hidden sm:inline">SCAD</span>
+                 SCAD
               </button>
               <button 
                 onClick={exportStl} 
                 disabled={!currentJscad}
-                className="flex items-center gap-2 bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-20 text-black px-3 sm:px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all hover:scale-105 shrink-0"
+                className="hidden"
               >
                  <Download className="w-4 h-4" />
-                 <span className="hidden sm:inline">STL</span>
+                 STL
               </button>
            </div>
         </header>
@@ -793,76 +1460,117 @@ ${currentJscad}
            <div className="flex-1 relative">
              {/* Large Central Canvas */}
              <div className="h-full w-full">
-                 {activeTab === '3d' ? (
-                   <Suspense fallback={<PreviewFallback />}>
-                     <Preview3D 
-                      isProcessing={isLoading} 
-                      jscadCode={currentJscad} 
-                      modelParams={modelParams}
-                      onExportStl={exportStl} 
-                      onExportScad={exportScad}
-                      showGrid={showGrid}
-                       toggleGrid={() => setShowGrid(!showGrid)}
-                       renderError={renderError} 
-                       onError={setRenderError} 
-                       onRepair={handleRepairModel}
-                       t={t}
-                     />
-                   </Suspense>
-                ) : activeTab === 'chat' ? (
-                   <div className="h-full overflow-y-auto bg-app-bg custom-scrollbar p-4 sm:p-8 relative" onScroll={handleScroll}>
-                      <div className="max-w-3xl mx-auto space-y-6 sm:space-y-8 pb-36 sm:pb-32">
-                         {messages.length === 0 && !isLoading && (
-                            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="pt-10">
-                              <div className="mb-8">
-                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-app-surface border border-app-border text-[10px] font-black uppercase tracking-widest text-[#3b82f6] mb-5">
-                                  <Sparkles className="w-3.5 h-3.5" />
-                                  AI CAD workspace
-                                </div>
-                                <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-app-text">Generate precise 3D parts from plain language.</h2>
-                                <p className="text-app-text-muted text-sm mt-3 max-w-xl leading-relaxed">Start with a mechanical part, enclosure, mount, or upload a reference image. The app will generate editable JSCAD, parameters, and a live 3D preview.</p>
+                {activeTab === '3d' ? (
+                   <div className="w-full h-full bg-[#0b0c10] relative rounded-md overflow-hidden border border-app-border flex flex-col">
+                     {/* Clean information notification header */}
+                     <div className="flex flex-col md:flex-row md:items-center justify-between px-4 py-3 border-b border-app-border bg-[#10121a]/95 backdrop-blur-sm z-10 shrink-0 gap-3">
+                       <div className="flex items-center gap-2.5">
+                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></div>
+                         <div>
+                           <span className="text-[12px] font-black text-white tracking-wide uppercase block">
+                             {language === 'km' ? 'សួនកុមារ 3D OpenSCAD Sandbox' : 'Ochafik OpenSCAD 3D Sandbox'}
+                           </span>
+                           <span className="text-[10px] text-[#94a3b8] mt-0.5 block leading-normal">
+                             {language === 'km' 
+                               ? 'កូដត្រូវបានបញ្ជូន និងចងក្រងដោយស្វ័យប្រវត្តក្នុងកម្មវិធីមើល 3D ochafik ភ្លាមៗ!'
+                               : 'Generated OpenSCAD code is automatically copied and updated inside the ochafik preview canvas!'
+                             }
+                           </span>
+                         </div>
+                       </div>
+
+                       {/* Actions */}
+                        <div className="flex flex-wrap items-center gap-3 self-end md:self-auto shrink-0">
+                          {/* Copy manual button */}
+                          <button
+                            onClick={() => {
+                              if (currentScad) {
+                                let copied = false;
+                                if (navigator.clipboard?.writeText) {
+                                  navigator.clipboard.writeText(currentScad);
+                                  copied = true;
+                                }
+                                if (!copied) {
+                                  const tx = document.createElement("textarea");
+                                  tx.value = currentScad;
+                                  tx.style.position = "fixed";
+                                  tx.style.opacity = "0";
+                                  document.body.appendChild(tx);
+                                  tx.select();
+                                  document.execCommand('copy');
+                                  document.body.removeChild(tx);
+                                }
+                                setShowCopyNotice(true);
+                                setTimeout(() => setShowCopyNotice(false), 8000);
+                              }
+                            }}
+                            className="bg-[#1e293b] hover:bg-[#334155] border border-[#1e293b]/60 text-[10px] text-white px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 shrink-0"
+                          >
+                            <Clipboard className="w-3.5 h-3.5" />
+                            {language === 'km' ? 'ចម្លងកូដ OpenSCAD' : 'Copy SCAD Code'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 w-full overflow-hidden relative">
+                        <div className="w-full h-full relative">
+                          <iframe 
+                            key={debouncedIframeUrl}
+                            src={debouncedIframeUrl} 
+                            className="w-full h-full border-none"
+                            title="OpenSCAD Editor and Viewer"
+                            sandbox="allow-scripts allow-same-origin allow-popups allow-downloads allow-forms"
+                          />
+                          {showCopyNotice && (
+                            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-app-surface/95 backdrop-blur-md border border-[#3b82f6]/30 rounded-2xl px-6 py-4 shadow-2xl flex items-center gap-4 max-w-[90%] transition-all">
+                              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></div>
+                              <div className="flex-1 text-left">
+                                <span className="text-[12px] font-bold text-white tracking-wide block">
+                                  {language === 'km' ? 'កូដ OpenSCAD ត្រូវបានធ្វើបច្ចុប្បន្នភាពស្វ័យប្រវត្ត!' : 'OpenSCAD Code Synced & Updated!'}
+                                </span>
+                                <span className="text-[11px] text-app-text-muted mt-0.5 block">
+                                  {language === 'km' 
+                                    ? 'កូដត្រូវបានបញ្ជូន និងចងក្រងដោយស្វ័យប្រវត្តក្នុងកម្មវិធីមើល 3D ochafik'
+                                    : 'Code is sent and updated automatically inside the ochafik 3D playground editor window.'
+                                  }
+                                </span>
                               </div>
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                {[
-                                  'A wall-mounted enclosure with screw holes and a snap-fit lid',
-                                  'A reinforced L bracket with countersunk holes',
-                                  'A 608 bearing block with mounting slots'
-                                ].map(example => (
-                                  <button
-                                    key={example}
-                                    onClick={() => handleSend(example)}
-                                    className="text-left p-4 rounded-xl bg-app-surface border border-app-border hover:border-[#3b82f6]/50 hover:bg-app-surface-hover transition-all group"
-                                  >
-                                    <p className="text-[11px] font-bold leading-relaxed text-app-text-dim group-hover:text-app-text">{example}</p>
-                                  </button>
-                                ))}
+                              <button 
+                                onClick={() => setShowCopyNotice(false)} 
+                                className="bg-app-surface border border-app-border p-1.5 rounded-lg text-app-text-muted hover:text-white transition-colors"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+) : activeTab === 'chat' ? (
+                  <div className="h-full overflow-y-auto bg-app-bg custom-scrollbar p-8 relative" onScroll={handleScroll}>
+                     <div className="max-w-3xl mx-auto space-y-8 pb-32">
+                        {messages.map((m, i) => (
+                           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`p-6 rounded-2xl max-w-[85%] text-[14px] leading-relaxed border shadow-2xl ${m.role === 'user' ? 'bg-[#3b82f6] border-[#2563eb] text-white font-medium' : 'bg-app-surface border-app-border text-app-text-dim'}`}>
+                                 <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-sm`}>
+                                   <ReactMarkdown
+                                     components={{
+                                       code({ node, inline, className, children, ...props }: any) {
+                                         if (!inline) {
+                                           return <ChatCodeBlock className={className}>{children}</ChatCodeBlock>;
+                                         }
+                                         return <code className={className} {...props}>{children}</code>;
+                                       }
+                                     }}
+                                   >
+                                     {m.parts.map(p => p.text).join('')}
+                                   </ReactMarkdown>
+                                 </div>
                               </div>
-                            </motion.div>
-                         )}
-                         {messages.map((m, i) => (
-                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                               <div className={`p-4 sm:p-6 rounded-2xl max-w-[92%] sm:max-w-[85%] text-[13px] sm:text-[14px] leading-relaxed border shadow-2xl ${m.role === 'user' ? 'bg-[#3b82f6] border-[#2563eb] text-white font-medium' : 'bg-app-surface border-app-border text-app-text-dim'}`}>
-                                  <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-sm`}>
-                                    <MarkdownView>{m.parts.map(p => p.text).join('')}</MarkdownView>
-                                  </div>
-                               </div>
-                            </motion.div>
-                         ))}
-                         {generationError && (
-                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex justify-start">
-                               <div className="max-w-[85%] bg-red-500/10 border border-red-500/25 rounded-2xl p-5 shadow-2xl">
-                                  <div className="flex items-start gap-3">
-                                     <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-                                     <div>
-                                       <p className="text-[10px] font-black uppercase tracking-widest text-red-300">Generation failed</p>
-                                       <p className="text-[13px] text-red-100/90 mt-1 leading-relaxed">{generationError}</p>
-                                     </div>
-                                  </div>
-                               </div>
-                            </motion.div>
-                         )}
-                         {isLoading && (
-                            <div className="flex justify-start">
+                           </motion.div>
+                        ))}
+                        {isLoading && (
+                           <div className="flex justify-start">
                               <div className="bg-app-surface border border-app-border rounded-2xl p-4 flex items-center gap-4 animate-pulse shadow-2xl">
                                  <Loader2 className="w-4 h-4 animate-spin text-[#3b82f6]" />
                                  <span className="text-[12px] font-bold text-app-text-muted uppercase tracking-widest">{loadingStep}</span>
@@ -871,72 +1579,292 @@ ${currentJscad}
                         )}
                         <div ref={chatEndRef} />
                      </div>
-                     <AnimatePresence>
-                        {showScrollBottom && (
-                           <motion.button
-                              initial={{ opacity: 0, scale: 0.8, y: 10 }}
-                              animate={{ opacity: 1, scale: 1, y: 0 }}
-                              exit={{ opacity: 0, scale: 0.8, y: 10 }}
-                              onClick={() => scrollToBottom()}
-                              className="fixed bottom-36 left-1/2 -translate-x-1/2 z-40 bg-[#3b82f6] text-white p-3 rounded-full shadow-2xl hover:bg-[#2563eb] transition-all hover:scale-110 active:scale-95 border border-white/20"
-                           >
-                              <ArrowDown className="w-5 h-5" />
-                           </motion.button>
-                        )}
-                     </AnimatePresence>
-                  </div>
-                ) : activeTab === 'engine' ? (
-                    <div className="h-full bg-app-bg flex flex-col overflow-hidden">
-                      <div className="shrink-0 border-b border-app-border px-4 sm:px-8 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div className="bg-app-surface p-1 rounded-lg flex gap-1 w-full sm:w-auto overflow-x-auto scrollbar-hide">
-                          {[
-                            { id: 'jscad', label: 'JSCAD', disabled: !currentJscad },
-                            { id: 'scad', label: 'SCAD', disabled: !currentScad }
-                          ].map(item => (
-                            <button
-                              key={item.id}
-                              onClick={() => setCodeView(item.id as 'jscad' | 'scad')}
-                              disabled={item.disabled}
-                              className={`shrink-0 px-4 py-2 rounded-md text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30 ${codeView === item.id ? 'bg-[#3b82f6] text-white' : 'text-app-text-muted hover:text-app-text'}`}
-                            >
-                              {item.label}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-2 justify-end">
-                          <button
-                            onClick={() => copyToClipboard(codeView === 'scad' ? (currentScad || '') : (currentJscad || ''))}
-                            disabled={codeView === 'scad' ? !currentScad : !currentJscad}
-                            className="flex items-center gap-2 bg-app-surface hover:bg-app-surface-hover disabled:opacity-30 text-app-text-dim px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border border-app-border"
-                          >
-                            {copied ? <ClipboardCheck className="w-4 h-4 text-emerald-500" /> : <Clipboard className="w-4 h-4" />}
-                            <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
-                          </button>
-                          <button
-                            onClick={codeView === 'scad' ? exportScad : exportStl}
-                            disabled={codeView === 'scad' ? !currentScad : !currentJscad}
-                            className="flex items-center gap-2 bg-[#fbbf24] hover:bg-[#f59e0b] disabled:opacity-30 text-black px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all"
-                          >
-                            <Download className="w-4 h-4" />
-                            <span className="hidden sm:inline">{codeView === 'scad' ? 'SCAD' : 'STL'}</span>
-                          </button>
-                        </div>
+                     </div>
+                 ) : activeTab === 'engine' ? (
+                    <div className="h-full bg-[#0d0f14] custom-scrollbar flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-app-border selection:bg-[#264f78]">
+                      {/* Left Sidebar: Revisions list */}
+                      <div className="w-full lg:w-80 shrink-0 flex flex-col bg-[#0f111a] border-r border-[#1e293b]/20">
+                         <div className="p-4 border-b border-app-border">
+                            <span className="text-[10px] uppercase tracking-widest font-black text-app-text-muted select-none">
+                               {language === 'km' ? 'ប្រវត្តិរចនា និងជំនាន់' : 'Revision Timeline'}
+                            </span>
+                            <h3 className="text-sm font-black text-white mt-1 uppercase tracking-tight">
+                               {language === 'km' ? 'ជំនាន់កូដ (' : 'Code Versions ('} {revisions.length} )
+                            </h3>
+                         </div>
+                         <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2 max-h-[250px] lg:max-h-none">
+                            {revisions.length === 0 ? (
+                               <div className="p-4 text-center">
+                                  <p className="text-[11px] text-app-text-muted italic">
+                                     {language === 'km' ? 'មិនទាន់មានប្រវត្តិជំនាន់នៅឡើយទេ' : 'No revisions found. Ask AI to generate a 3D model to start tracking.'}
+                                  </p>
+                               </div>
+                            ) : (
+                               [...revisions].reverse().map((rev) => {
+                                  const displayNum = revisions.findIndex(r => r.id === rev.id) + 1;
+                                  const isActive = rev.id === selectedRevisionId;
+                                  const isPreviewed = rev.id === previewRevisionId;
+                                  return (
+                                     <button
+                                        key={rev.id}
+                                        onClick={() => setPreviewRevisionId(rev.id)}
+                                        className={`w-full text-left p-3.5 rounded-xl border transition-all flex flex-col gap-2 ${
+                                           isPreviewed 
+                                              ? 'bg-[#1d4ed8]/10 border-[#3b82f6]/40 shadow-md shadow-blue-500/5' 
+                                              : 'bg-app-surface/40 hover:bg-app-surface/80 border-app-border/40 hover:border-app-border'
+                                        }`}
+                                     >
+                                        <div className="flex items-center justify-between w-full">
+                                           <span className="font-mono text-[11px] font-black tracking-wide text-white">
+                                              v{displayNum}
+                                           </span>
+                                           {isActive ? (
+                                              <span className="text-[9px] font-black uppercase text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/25 animate-pulse">
+                                                 {language === 'km' ? 'សកម្ម' : 'Active'}
+                                              </span>
+                                           ) : (
+                                              <span className="text-[9px] font-black uppercase text-app-text-muted bg-app-surface border border-app-border px-2 py-0.5 rounded-full">
+                                                 {language === 'km' ? 'ចាស់' : 'Old'}
+                                              </span>
+                                           )}
+                                        </div>
+                                        <p className="text-[11.5px] italic text-app-text-dim line-clamp-2 leading-relaxed">
+                                           "{rev.promptMessage}"
+                                        </p>
+                                        <div className="flex items-center justify-between text-[10px] text-app-text-muted font-medium pt-1 border-t border-app-border/20">
+                                           <span>{new Date(rev.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second: '2-digit'})}</span>
+                                           {isPreviewed && <span className="text-[#3b82f6] font-bold uppercase text-[9px] tracking-wider">{language === 'km' ? 'កំពុងមើល' : 'Viewing'}</span>}
+                                        </div>
+                                     </button>
+                                  );
+                               })
+                            )}
+                         </div>
                       </div>
-                      <div className="flex-1 p-4 sm:p-8 font-mono text-[12px] sm:text-[13px] overflow-auto text-app-text selection:bg-[#264f78] custom-scrollbar">
-                        <pre className="whitespace-pre-wrap break-words"><code>{codeView === 'scad' ? (currentScad || '// NO SCAD CODE GENERATED') : (currentJscad || '// NO JSCAD CODE GENERATED')}</code></pre>
+
+                      {/* Right Panel: Code Viewer and Diff Viewer */}
+                      <div className="flex-1 flex flex-col min-w-0 bg-[#07080c]">
+                         {(() => {
+                            const previewRev = revisions.find(r => r.id === previewRevisionId) || (revisions.length > 0 ? revisions[revisions.length - 1] : null);
+                            if (!previewRev) {
+                               return (
+                                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#07080c]">
+                                     <CodeIcon className="w-12 h-12 text-app-text-muted animate-pulse mb-4" />
+                                     <h3 className="text-white font-black uppercase tracking-widest text-xs">
+                                        {language === 'km' ? 'មិនទាន់មានកូដនៅឡើយទេ' : 'Engine Code Empty'}
+                                     </h3>
+                                     <p className="text-[11.5px] text-app-text-muted max-w-sm mt-2 leading-relaxed">
+                                        {language === 'km' 
+                                           ? 'សូមសរសេរការណែនាំរបស់អ្នកក្នុងប្រអប់ "ជជែក" ដើម្បីបង្កើតកូដដំបូងបង្អស់។' 
+                                           : 'Ask the design AI a part prompt in the Chat window to generate your first revision history.'}
+                                     </p>
+                                  </div>
+                               );
+                            }
+
+                            const prevIdx = revisions.findIndex(r => r.id === previewRev.id);
+                            const predecessor = prevIdx > 0 ? revisions[prevIdx - 1] : null;
+
+                            return (
+                               <>
+                                  {/* Toolbar header */}
+                                  <div className="p-4 border-b border-[#1e293b]/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0a0c12]">
+                                     <div className="flex flex-wrap items-center gap-2">
+                                        {/* Format Toggle (JSCAD / SCAD) */}
+                                        <div className="flex bg-app-surface p-1 rounded-lg border border-app-border/60">
+                                           <button 
+                                              onClick={() => setEngineView('jscad')}
+                                              className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${engineView === 'jscad' ? 'bg-[#3b82f6] text-white shadow' : 'text-app-text-muted hover:text-app-text-dim'}`}
+                                           >
+                                              JSCAD
+                                           </button>
+                                           <button 
+                                              onClick={() => setEngineView('scad')}
+                                              className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${engineView === 'scad' ? 'bg-[#3b82f6] text-white shadow' : 'text-app-text-muted hover:text-app-text-dim'}`}
+                                           >
+                                              OpenSCAD
+                                           </button>
+                                        </div>
+
+                                        {/* Mode Selector (Code vs Diff) */}
+                                        <div className="flex bg-[#11131a] p-1 rounded-lg border border-app-border/60">
+                                           <button 
+                                              onClick={() => setEngineSubTab('code')}
+                                              className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${engineSubTab === 'code' ? 'bg-[#10b981] text-white shadow' : 'text-app-text-muted hover:text-app-text-dim'}`}
+                                              title="Raw Code Viewer"
+                                           >
+                                              <CodeIcon className="w-3 h-3" />
+                                              {language === 'km' ? 'កូដលម្អិត' : 'Raw Code'}
+                                           </button>
+                                           <button 
+                                              onClick={() => setEngineSubTab('diff')}
+                                              className={`px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${engineSubTab === 'diff' ? 'bg-[#10b981] text-white shadow' : 'text-app-text-muted hover:text-app-text-dim'}`}
+                                              title="View Difference with predecessor"
+                                           >
+                                              <Layers className="w-3 h-3" />
+                                              {language === 'km' ? 'ប្រៀបធៀបគម្លាត' : 'Visual Diff'}
+                                           </button>
+                                        </div>
+                                     </div>
+
+                                     <div className="flex items-center gap-2">
+                                        {/* Action reverting button if preview revision != currently active */}
+                                        {previewRev.id !== selectedRevisionId ? (
+                                           <button
+                                              onClick={() => handleRevertToRevision(previewRev)}
+                                              className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#3b82f6] hover:text-[#2563eb] border border-[#3b82f6]/30 hover:border-[#3b82f6] px-3 py-1.5 rounded-xl bg-[#3b82f6]/10 hover:bg-[#3b82f6]/20 transition-all"
+                                           >
+                                              <Undo2 className="w-3.5 h-3.5" />
+                                              {language === 'km' ? 'ត្រឡប់ទៅជំនាន់នេះ' : 'Revert to this version'}
+                                           </button>
+                                        ) : (
+                                           <span className="text-[10px] text-emerald-400 font-black uppercase bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl select-none">
+                                              ● {language === 'km' ? 'ជំនាន់គំរូសកម្ម' : 'Active Scene Version'}
+                                           </span>
+                                        )}
+
+                                        <button 
+                                           onClick={() => {
+                                              const code = engineView === 'jscad' ? (previewRev.jscadCode || '') : (previewRev.scadCode || '');
+                                              copyToClipboard(code);
+                                           }}
+                                           className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#10b981] hover:text-[#059669] transition-all px-3 py-1.5 rounded-xl bg-[#10b981]/10 hover:bg-[#10b981]/20 border border-[#10b981]/25"
+                                        >
+                                           {copied ? <ClipboardCheck className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5" />}
+                                           {copied ? 'Copied' : 'Copy'}
+                                        </button>
+                                     </div>
+                                  </div>
+
+                                  {/* Viewer Window */}
+                                  <div className="flex-1 p-0 overflow-auto custom-scrollbar font-mono bg-[#030406]">
+                                     {engineSubTab === 'code' ? (
+                                        <div className="py-4 font-mono text-[11px] sm:text-[12px]">
+                                           {(engineView === 'jscad' ? (previewRev.jscadCode || '// NO JSCAD CODE') : (previewRev.scadCode || '// NO OPENSCAD CODE'))
+                                              .split('\n')
+                                              .map((line, lineIdx) => (
+                                                 <div key={lineIdx} className="flex hover:bg-white/5 px-6 py-0.5 leading-relaxed">
+                                                    <span className="w-12 text-right pr-4 text-app-text-muted shrink-0 select-none border-r border-[#1e293b]/40 mr-4 opacity-30">
+                                                       {lineIdx + 1}
+                                                    </span>
+                                                    <span className="text-app-text-dim break-all whitespace-pre-wrap">
+                                                       {line || ' '}
+                                                    </span>
+                                                 </div>
+                                              ))
+                                           }
+                                        </div>
+                                     ) : (
+                                        /* DIFF MODE */
+                                        <div className="py-4 font-mono text-[11px] sm:text-[12px]">
+                                           {/* Brief instructions warning at the top of the diff */}
+                                           <div className="px-6 mb-4 text-[10.5px] text-app-text-muted italic flex items-center gap-2 pb-3 border-b border-app-border/20">
+                                              <span>
+                                                 {(() => {
+                                                    const prevNumIdx = revisions.findIndex(r => r.id === previewRev.id);
+                                                    if (prevNumIdx > 0) {
+                                                       const displayOldNum = prevNumIdx;
+                                                       const displayNewNum = prevNumIdx + 1;
+                                                       return language === 'km' 
+                                                          ? `ប្រៀបធៀបគម្លាត៖ ជំនាន់ v${displayOldNum} ➔ ជំនាន់ v${displayNewNum} (ការផ្លាស់ប្តូរដែលបានស្នើឡើង)`
+                                                          : `Visual diff comparison: v${displayOldNum} ➔ v${displayNewNum} (Changes introduced in this revision)`;
+                                                    } else {
+                                                       return language === 'km'
+                                                          ? 'គំរូមូលដ្ឋាន៖ ការរចនាដំបូងបង្អស់'
+                                                          : 'Base Version: Initial generated model code with all lines added';
+                                                    }
+                                                 })()}
+                                              </span>
+                                           </div>
+
+                                           {(() => {
+                                              const oldText = predecessor 
+                                                 ? (engineView === 'jscad' ? (predecessor.jscadCode || '') : predecessor.scadCode)
+                                                 : '';
+                                              const newText = engineView === 'jscad' ? (previewRev.jscadCode || '') : previewRev.scadCode;
+
+                                              const diffs = diffLines(oldText, newText);
+
+                                              return diffs.map((diffLine, lineIdx) => {
+                                                 const isAdded = diffLine.type === 'added';
+                                                 const isRemoved = diffLine.type === 'removed';
+                                                 
+                                                 const bgClass = isAdded 
+                                                    ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 border-l-2 border-emerald-500' 
+                                                    : isRemoved 
+                                                       ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/15 border-l-2 border-rose-500' 
+                                                       : 'hover:bg-white/5 text-app-text-dim border-l-2 border-transparent';
+
+                                                 const oldLineNo = diffLine.lineNumberOld !== undefined ? diffLine.lineNumberOld : '';
+                                                 const newLineNo = diffLine.lineNumberNew !== undefined ? diffLine.lineNumberNew : '';
+
+                                                 return (
+                                                    <div key={lineIdx} className={`flex px-6 py-0.5 ${bgClass} leading-relaxed`}>
+                                                       {/* Old Line column */}
+                                                       <span className="w-10 text-right pr-2 text-app-text-muted shrink-0 select-none opacity-30 text-[10px] py-0.5">
+                                                          {oldLineNo}
+                                                       </span>
+                                                       {/* New Line column */}
+                                                       <span className="w-10 text-right pr-4 text-app-text-muted shrink-0 select-none border-r border-[#1e293b]/40 mr-4 opacity-30 text-[10px] py-0.5">
+                                                          {newLineNo}
+                                                       </span>
+                                                       {/* Code statement */}
+                                                       <span className="break-all whitespace-pre-wrap select-text py-0.5">
+                                                          {isAdded ? '+ ' : isRemoved ? '- ' : '  '}
+                                                          {diffLine.text}
+                                                       </span>
+                                                    </div>
+                                                 );
+                                              });
+                                           })()}
+                                        </div>
+                                     )}
+                                  </div>
+                               </>
+                            );
+                         })()}
+                      </div>
+                    </div>
+                  ) : (activeTab as any) === 'engine_old_unused_safeguard' ? (
+                   <div className="h-full bg-app-bg font-mono text-[13px] text-app-text selection:bg-[#264f78] custom-scrollbar flex flex-col">
+                      <div className="p-4 border-b border-app-border flex items-center justify-between shrink-0">
+                         <div className="flex bg-app-surface p-1 rounded-lg border border-app-border">
+                            <button 
+                              onClick={() => setEngineView('jscad')}
+                              className={`px-4 py-1 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${engineView === 'jscad' ? 'bg-[#3b82f6] text-white shadow-lg' : 'text-app-text-muted hover:text-app-text'}`}
+                            >
+                               JSCAD
+                            </button>
+                            <button 
+                              onClick={() => setEngineView('scad')}
+                              className={`px-4 py-1 rounded-md text-[10px] font-black uppercase tracking-widest transition-all ${engineView === 'scad' ? 'bg-[#3b82f6] text-white shadow-lg' : 'text-app-text-muted hover:text-app-text'}`}
+                            >
+                               OpenSCAD
+                            </button>
+                         </div>
+                         <button 
+                           onClick={() => copyToClipboard(engineView === 'jscad' ? (currentJscad || '') : (currentScad || ''))}
+                           className="flex items-center gap-2 text-[10px] font-bold uppercase text-app-text-muted hover:text-[#3b82f6] transition-all px-3 py-1.5 rounded-md hover:bg-app-surface"
+                         >
+                            {copied ? <ClipboardCheck className="w-3.5 h-3.5" /> : <Clipboard className="w-3.5 h-3.5" />}
+                            {copied ? 'Copy' : 'Copy'}
+                         </button>
+                      </div>
+                      <div className="flex-1 p-6 sm:p-10 overflow-auto">
+                        <pre><code>{engineView === 'jscad' ? (currentJscad || '// NO JSCAD DATA') : (currentScad || '// NO OPENSCAD DATA')}</code></pre>
                       </div>
                    </div>
                  ) : activeTab === 'blueprint' ? (
-                   <div className="h-full p-4 sm:p-8 overflow-y-auto custom-scrollbar bg-app-bg">
+                   <div className="h-full p-8 overflow-y-auto custom-scrollbar bg-app-bg">
                       <div className="max-w-3xl mx-auto pb-32">
                          <div className="flex items-center gap-4 mb-8">
                             <Layers className="w-6 h-6 text-[#3b82f6]" />
                             <h2 className="text-xl font-black text-app-text uppercase tracking-tight">{language === 'km' ? 'ប្លង់មេ និងការវិភាគ' : 'Blueprint & Analysis'}</h2>
                          </div>
-                          <div className="bg-app-surface border border-app-border p-5 sm:p-8 rounded-2xl text-[13px] sm:text-[14px] leading-relaxed text-app-text-dim shadow-2xl">
+                         <div className="bg-app-surface border border-app-border p-8 rounded-2xl text-[14px] leading-relaxed text-app-text-dim shadow-2xl">
                             {designAnalysis ? (
                                <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-sm`}>
-                                   <MarkdownView>{designAnalysis}</MarkdownView>
+                                  <ReactMarkdown>{designAnalysis}</ReactMarkdown>
                                </div>
                             ) : (
                                <p className="italic text-app-text-muted">No active design analysis. Describe something in Chat to generate a blueprint.</p>
@@ -944,58 +1872,75 @@ ${currentJscad}
                          </div>
                       </div>
                    </div>
+                ) : activeTab === 'detect' ? (
+                  <VisionWorkspace 
+                    language={language}
+                    theme={theme}
+                    isLoadingGlobal={isLoading}
+                    onExtractModel={(prompt) => handleSend(prompt)}
+                  />
+                ) : activeTab === 'branding' ? (
+                  <BrandingWorkspace 
+                    language={language}
+                    theme={theme}
+                    currentModelName={selectedModel}
+                    onInsertToChat={(imageUrl, promptText) => {
+                      setSelectedImage(imageUrl);
+                      setActiveTab('chat');
+                      setInput(`Here is a generated branding visual asset: "${promptText}". Let's refine the 3D model or discuss how to adapt the design to fit this aesthetic!`);
+                    }}
+                  />
                 ) : (
-                  <div className="h-full p-4 sm:p-8 overflow-y-auto custom-scrollbar">
-                    <div className="max-w-3xl mx-auto pb-36 sm:pb-32">
-                       <div className="flex items-center gap-4 mb-8">
-                          <Settings className="w-6 h-6 text-[#3b82f6]" />
-                          <h2 className="text-xl font-black text-app-text uppercase tracking-tight">{t.tweakerTitle}</h2>
-                       </div>
-                       {modelParamSpecs.length === 0 ? (
-                         <div className="bg-app-surface border border-app-border rounded-2xl p-6 sm:p-10 text-center">
-                           <Settings className="w-8 h-8 text-app-text-muted mx-auto mb-4" />
-                           <p className="text-[11px] font-black uppercase tracking-widest text-app-text">{t.noParams}</p>
-                           <p className="text-[12px] text-app-text-muted mt-2">Generate a parametric model to unlock live sliders.</p>
-                         </div>
-                       ) : (
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {modelParamSpecs.map((spec, i) => (
-                             <div key={i} className="p-6 bg-app-surface rounded-2xl border border-app-border hover:border-[#3b82f6]/30 transition-all">
-                                <div className="flex justify-between gap-4 mb-4">
-                                   <label className="text-[10px] font-black uppercase tracking-widest text-app-text-muted">{spec.label}</label>
-                                   <span className="text-[12px] font-mono text-[#3b82f6] font-bold text-right">{String(modelParams[spec.name] ?? '')}</span>
-                                </div>
-                                {spec.type === 'select' || Array.isArray(spec.options) ? (
-                                  <div className="flex flex-wrap gap-2">
-                                    {(spec.options || []).map((option: string) => (
-                                      <button
-                                        key={option}
-                                        onClick={() => setModelParams(prev => ({ ...prev, [spec.name]: option }))}
-                                        className={`px-3 py-2 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${modelParams[spec.name] === option ? 'bg-[#3b82f6] border-[#3b82f6] text-white' : 'bg-app-bg border-app-border text-app-text-muted hover:text-app-text hover:border-[#3b82f6]/50'}`}
-                                      >
-                                        {option}
-                                      </button>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <input type="range" min={spec.min} max={spec.max} step={spec.step || 1} value={modelParams[spec.name]} onChange={e => setModelParams(prev => ({ ...prev, [spec.name]: parseFloat(e.target.value) }))} className="w-full h-1 bg-app-border rounded-full appearance-none cursor-pointer accent-[#3b82f6]" />
-                                )}
-                             </div>
-                          ))}
-                       </div>
-                       )}
-                    </div>
+                  <div className="h-full p-8 overflow-y-auto custom-scrollbar">
+                     <div className="max-w-3xl mx-auto pb-32">
+                        <div className="flex items-center gap-4 mb-8">
+                           <Settings className="w-6 h-6 text-[#3b82f6]" />
+                           <h2 className="text-xl font-black text-app-text uppercase tracking-tight">{t.tweakerTitle}</h2>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                           {modelParamSpecs.map((spec, i) => (
+                              <div key={i} className="p-6 bg-app-surface rounded-2xl border border-app-border hover:border-[#3b82f6]/30 transition-all flex flex-col justify-between">
+                                 <div className="flex justify-between mb-4">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-app-text-muted">{spec.label}</label>
+                                    <span className="text-[12px] font-mono text-[#3b82f6] font-bold">{modelParams[spec.name]}</span>
+                                 </div>
+                                 {spec.type === 'select' || spec.options ? (
+                                    <select
+                                       value={modelParams[spec.name] || spec.default}
+                                       onChange={e => setModelParams(prev => ({ ...prev, [spec.name]: e.target.value }))}
+                                       className="w-full bg-app-bg border border-app-border text-xs rounded-xl p-2.5 font-bold text-white tracking-wide cursor-pointer focus:border-[#3b82f6] outline-none"
+                                    >
+                                       {(spec.options || []).map((opt) => (
+                                          <option key={opt} value={opt} className="bg-[#10121a] text-white">{opt}</option>
+                                       ))}
+                                    </select>
+                                 ) : (
+                                    <input 
+                                       type="range" 
+                                       min={spec.min} 
+                                       max={spec.max} 
+                                       step={spec.step || 1} 
+                                       value={modelParams[spec.name] !== undefined ? modelParams[spec.name] : spec.default} 
+                                       onChange={e => setModelParams(prev => ({ ...prev, [spec.name]: parseFloat(e.target.value) }))} 
+                                       className="w-full h-1 bg-app-border rounded-full appearance-none cursor-pointer accent-[#3b82f6]" 
+                                    />
+                                 )}
+                              </div>
+                           ))}
+                        </div>
+                     </div>
                   </div>
-                )}
+               )}
              </div>
+          </div>
 
-             {/* Floating Bottom Prompt Bar */}
-             <div className="absolute bottom-3 sm:bottom-10 left-1/2 -translate-x-1/2 w-full max-w-2xl px-3 sm:px-6 z-30">
-                <div className="bg-app-surface/90 sm:bg-app-surface/80 backdrop-blur-2xl border border-app-border p-1.5 rounded-xl sm:rounded-2xl shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] flex items-end gap-1.5 sm:gap-3 group focus-within:border-[#3b82f6] transition-all">
-                   <button onClick={() => fileInputRef.current?.click()} className="p-2.5 sm:p-3 text-app-text-muted hover:text-[#3b82f6] transition-colors shrink-0"><ImageIcon className="w-5 h-5 sm:w-6 sm:h-6" /></button>
+           {/* Floating Bottom Prompt Bar */}
+             <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-2xl px-6 z-30">
+                <div className="bg-app-surface/80 backdrop-blur-2xl border border-app-border p-1.5 rounded-2xl shadow-[0_30px_60px_-15px_rgba(0,0,0,0.5)] flex items-end gap-3 group focus-within:border-[#3b82f6] transition-all">
+                   <button onClick={() => fileInputRef.current?.click()} className="p-3 text-app-text-muted hover:text-[#3b82f6] transition-colors"><ImageIcon className="w-6 h-6" /></button>
                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
                    
-                   <div className="flex-1 pb-1 min-w-0">
+                   <div className="flex-1 pb-1">
                       {selectedImage && (
                         <div className="relative w-16 h-16 mb-2">
                            <img src={selectedImage} className="w-full h-full object-cover rounded-xl border border-app-border" />
@@ -1028,18 +1973,16 @@ ${currentJscad}
                    <button 
                     onClick={() => handleSend()}
                     disabled={isLoading || (!input.trim() && !selectedImage)}
-                    className="bg-[#3b82f6] hover:bg-[#2563eb] text-white px-3 sm:px-6 py-3 rounded-xl disabled:opacity-10 transition-all font-bold text-[12px] uppercase tracking-widest shadow-lg shadow-blue-900/30 active:scale-95 flex items-center gap-2 shrink-0"
+                    className="bg-[#3b82f6] hover:bg-[#2563eb] text-white px-6 py-3 rounded-xl disabled:opacity-10 transition-all font-bold text-[12px] uppercase tracking-widest shadow-lg shadow-blue-900/30 active:scale-95 flex items-center gap-2"
                    >
                       {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                      <span className="hidden sm:inline">Generate</span>
+                      Generate
                    </button>
                 </div>
              </div>
-           </div>
 
            {/* Right Panel: Global Inspector / Preview */}
-           {isDesktopInspector && (
-           <div className="w-[380px] bg-app-bg border-l border-app-border flex flex-col shrink-0">
+           <div className="w-[380px] bg-app-bg border-l border-app-border flex flex-col hidden xl:flex shrink-0">
               <div className="p-6 border-b border-app-border flex items-center justify-between">
                  <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-app-text-muted">Live Preview</h2>
                  <div className="flex gap-1.5 font-mono text-[9px] text-app-text-muted">
@@ -1049,22 +1992,45 @@ ${currentJscad}
                  </div>
               </div>
               <div className="flex-1 p-4">
-                 <div className="h-[280px] w-full rounded-2xl overflow-hidden border border-app-border bg-black shadow-inner">
-                    <Suspense fallback={<PreviewFallback />}>
-                      <Preview3D 
-                        isProcessing={isLoading} 
-                        jscadCode={currentJscad} 
-                        modelParams={modelParams}
-                        onExportStl={exportStl} 
-                        onExportScad={exportScad}
-                        showGrid={showGrid}
-                        toggleGrid={() => setShowGrid(!showGrid)}
-                        renderError={renderError} 
-                        onError={setRenderError} 
-                        onRepair={handleRepairModel}
-                        t={t}
-                      />
-                    </Suspense>
+                 <div className="h-[280px] w-full rounded-2xl overflow-hidden border border-app-border bg-black/40 p-6 flex flex-col justify-between shadow-inner relative group/panel">
+                    <div className="absolute inset-0 bg-gradient-to-br from-[#3b82f6]/5 to-transparent pointer-events-none"></div>
+                    <div className="space-y-4">
+                       <div className="flex items-center gap-2">
+                          <BoxSelect className="w-5 h-5 text-[#3b82f6] animate-pulse" />
+                          <span className="text-[11px] font-black uppercase text-app-text tracking-wider">OpenSCAD Sync Stream</span>
+                       </div>
+                       <p className="text-[11.5px] text-app-text-muted leading-relaxed">
+                          {currentScad 
+                            ? "OpenSCAD script code is fully synchronized! Copy it and load it inside the OpenSCAD Viewer tab." 
+                            : "Describe your custom 3D part in the Chat box below to generate elegant parametric SCAD code."}
+                       </p>
+                       {currentScad && (
+                          <div className="flex bg-[#11131a] border border-app-border rounded-xl p-3 items-center justify-between mt-2">
+                             <span className="font-mono text-[9px] text-emerald-500 font-black uppercase tracking-widest flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
+                                Clipboard Ready
+                             </span>
+                             <button 
+                                onClick={() => {
+                                   navigator.clipboard.writeText(currentScad || '');
+                                   setCopied(true);
+                                   setTimeout(() => setCopied(false), 2000);
+                                }}
+                                className="text-[10px] bg-app-surface border border-app-border px-2.5 py-1.5 rounded-lg font-bold text-app-text hover:text-[#3b82f6] transition-colors"
+                             >
+                                {copied ? 'Copied!' : 'Copy Code'}
+                             </button>
+                          </div>
+                       )}
+                    </div>
+
+                    <button 
+                       onClick={() => setActiveTab('3d')}
+                       className="w-full bg-[#3b82f6] text-white text-[10px] font-black uppercase tracking-widest py-3 rounded-xl hover:bg-[#2563eb] transition-all shadow-lg shadow-blue-500/10 flex items-center justify-center gap-2 mt-4"
+                    >
+                       <ExternalLink className="w-4 h-4" />
+                       Go to OpenSCAD Player
+                    </button>
                  </div>
 
                  <div className="mt-8 space-y-6">
@@ -1073,7 +2039,7 @@ ${currentJscad}
                        <div className="bg-app-surface border border-app-border p-5 rounded-2xl text-[12px] leading-relaxed text-app-text-dim shadow-xl overflow-y-auto max-h-[300px] custom-scrollbar">
                           {designAnalysis ? (
                             <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} prose-xs`}>
-                              <MarkdownView>{designAnalysis}</MarkdownView>
+                              <ReactMarkdown>{designAnalysis}</ReactMarkdown>
                             </div>
                           ) : (
                             <p className="italic text-app-text-muted">Generating structural request results...</p>
@@ -1084,41 +2050,24 @@ ${currentJscad}
                     <div className="grid grid-cols-2 gap-3">
                        <button onClick={() => setActiveTab('3d')} className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-app-surface border border-app-border hover:border-[#3b82f6]/40 transition-all">
                           <Monitor className="w-5 h-5 text-[#3b82f6]" />
-                          <span className="text-[9px] font-bold uppercase text-app-text-muted">Fullscreen</span>
+                          <span className="text-[9px] font-bold uppercase text-app-text-muted">Fullscreen Open</span>
                        </button>
-                       <button onClick={handleRerender} disabled={!currentJscad} className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-app-surface border border-app-border hover:border-[#3b82f6]/40 transition-all disabled:opacity-30">
-                          <RefreshCw className="w-5 h-5 text-amber-500" />
-                          <span className="text-[9px] font-bold uppercase text-app-text-muted">Re-render</span>
+                       <button onClick={() => {
+                          if (currentScad) {
+                             navigator.clipboard.writeText(currentScad);
+                             setCopied(true);
+                             setTimeout(() => setCopied(false), 2000);
+                          }
+                       }} className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-app-surface border border-app-border hover:border-[#3b82f6]/40 transition-all">
+                          <RefreshCw className="w-5 h-5 text-emerald-500" />
+                          <span className="text-[9px] font-bold uppercase text-app-text-muted">Copy SCAD</span>
                        </button>
                     </div>
                  </div>
               </div>
            </div>
-           )}
         </main>
        </div>
-
-       <AnimatePresence>
-          {exportError && (
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 12 }}
-              className="fixed right-4 bottom-24 sm:bottom-6 z-[90] max-w-sm bg-red-500/10 border border-red-500/30 text-red-100 rounded-xl p-4 shadow-2xl backdrop-blur-md"
-            >
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-red-300">STL export failed</p>
-                  <p className="text-[12px] leading-relaxed mt-1 break-words">{exportError}</p>
-                </div>
-                <button onClick={() => setExportError(null)} className="p-1 text-red-200/70 hover:text-red-100">
-                  <Trash2 className="w-4 h-4 rotate-45" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-       </AnimatePresence>
 
        {/* Modals & Overlays */}
        <AnimatePresence>
@@ -1166,7 +2115,7 @@ ${currentJscad}
                         onClick={() => setSelectedModel('gemini-3-flash-preview')}
                         className={`flex flex-col items-center gap-2 py-4 rounded-xl transition-all ${selectedModel === 'gemini-3-flash-preview' ? 'bg-[#3b82f6] text-white shadow-xl shadow-blue-500/20' : 'text-app-text-muted hover:text-app-text-dim'}`}
                       >
-                        <RefreshCw className={`w-5 h-5 ${selectedModel === 'gemini-3-flash-preview' ? 'animate-spin-slow' : ''}`} />
+                        <RefreshCw className="w-4.5 h-4.5" />
                         <span className="text-[10px] font-black uppercase">Fast Mode</span>
                       </button>
                       <button 
@@ -1186,7 +2135,7 @@ ${currentJscad}
 
                   <div className="pt-4 border-t border-app-border">
                     <button 
-                      onClick={() => { setMessages([]); setCurrentJscad(null); setCurrentScad(null); setShowSettings(false); }}
+                      onClick={() => { setMessages([]); setCurrentJscad(null); setCurrentScad(null); setRevisions([]); setShowSettings(false); }}
                       className="w-full flex items-center justify-center gap-2 py-4 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-2xl transition-all text-[11px] font-black uppercase tracking-widest"
                     >
                       <RefreshCw className="w-4 h-4" />
@@ -1220,6 +2169,7 @@ ${currentJscad}
                </div>
             </motion.div>
           )}
+
           {showSaveNaming && (
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -1265,7 +2215,7 @@ ${currentJscad}
                     <h3 className="text-xl font-black text-app-text uppercase tracking-tight">Saved Blueprints</h3>
                     <p className="text-[12px] text-app-text-muted tracking-wide">Select a previous design to reload it.</p>
                   </div>
-                  <button onClick={() => setShowSavedList(false)} className="p-2 text-app-text-muted hover:text-app-text transition-all"><Trash2 className="w-5 h-5 rotate-45" /></button>
+                  <button onClick={() => setShowSavedList(false)} className="p-2 text-app-text-muted hover:text-app-text transition-all"><X className="w-5 h-5" /></button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
@@ -1281,8 +2231,8 @@ ${currentJscad}
                            <Box className="w-6 h-6" />
                         </div>
                         <div className="flex-1">
-                          <p className="text-sm font-black text-app-text uppercase tracking-tight">{d.name}</p>
-                          <p className="text-[10px] text-app-text-muted">{new Date(d.timestamp).toLocaleString()}</p>
+                           <p className="text-sm font-black text-app-text uppercase tracking-tight">{d.name}</p>
+                           <p className="text-[10px] text-app-text-muted">{new Date(d.timestamp).toLocaleString()}</p>
                         </div>
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleDeleteSaved(d.timestamp); }}
@@ -1298,7 +2248,88 @@ ${currentJscad}
               </motion.div>
             </motion.div>
           )}
+
+          {showChatCamera && (
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
+              onClick={() => setShowChatCamera(false)}
+            >
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                className="bg-app-surface border border-app-border p-6 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col gap-4"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Camera className="w-5 h-5 text-[#3b82f6]" />
+                    <h3 className="text-md font-black text-app-text uppercase tracking-tight">
+                      {language === 'km' ? 'ថតរូបភាពគំរូ' : 'Capture Reference Photo'}
+                    </h3>
+                  </div>
+                  <button onClick={() => setShowChatCamera(false)} className="p-1 px-2.5 rounded bg-app-bg text-app-text-muted hover:text-white border border-app-border text-xs">
+                    ✕
+                  </button>
+                </div>
+
+                <div className="relative aspect-video bg-neutral-950 rounded-2xl overflow-hidden border border-white/5 flex items-center justify-center">
+                  {chatCameraError ? (
+                    <div className="absolute inset-x-4 text-center text-red-400 text-xs flex flex-col items-center gap-2">
+                      <AlertCircle className="w-8 h-8 text-red-500" />
+                      <p>{chatCameraError}</p>
+                    </div>
+                  ) : (
+                    <video 
+                      ref={chatVideoRef} 
+                      autoPlay 
+                      playsInline 
+                      className="w-full h-full object-cover scale-x-[-1]"
+                    />
+                  )}
+                  
+                  {!chatCameraError && (
+                    <div className="absolute top-3 left-3 bg-black/60 px-2 py-0.5 rounded-full text-[9px] text-green-400 font-bold tracking-wider uppercase border border-green-400/20 animate-pulse">
+                      <span className="w-1.5 h-1.5 inline-block rounded-full bg-green-400 mr-1.5" />
+                      Ready to Capture
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3 mt-2">
+                  <button 
+                    onClick={() => setShowChatCamera(false)} 
+                    className="flex-1 py-3 border border-app-border hover:bg-neutral-800 text-app-text-muted hover:text-white rounded-xl text-[11px] font-black uppercase tracking-wider transition-all"
+                  >
+                    {language === 'km' ? 'បោះបង់' : 'Cancel'}
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (chatVideoRef.current) {
+                        const video = chatVideoRef.current;
+                        const canvas = document.createElement('canvas');
+                        canvas.width = video.videoWidth || 640;
+                        canvas.height = video.videoHeight || 480;
+                        const ctx = canvas.getContext('2d');
+                        if (ctx) {
+                          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                          const dataUrl = canvas.toDataURL('image/jpeg');
+                          setSelectedImage(dataUrl);
+                          setLastUploadedImage(dataUrl);
+                          setShowChatCamera(false);
+                        }
+                      }
+                    }} 
+                    disabled={!!chatCameraError || !chatCameraStream}
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-xl text-[11px] font-black uppercase tracking-wider shadow-lg shadow-blue-900/30 transition-all"
+                  >
+                    {language === 'km' ? 'ថតរូបភាព' : 'Capture Photo'}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
        </AnimatePresence>
     </div>
   );
 }
+
