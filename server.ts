@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config({ path: [".env.local", ".env"] });
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -13,7 +13,7 @@ let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is missing. Please configuration secrets in Settings > Secrets.");
+    throw new Error("GEMINI_API_KEY environment variable is missing. Please configure it in .env.local or deployment secrets.");
   }
   if (!aiClient) {
     aiClient = new GoogleGenAI({
