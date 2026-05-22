@@ -78,6 +78,126 @@ Act as a highly skilled collaborative partner. Your goal is to provide expert en
 
 Always prioritize being helpful, clear, and professional.`;
 
+function getLastUserPrompt(history: any[] = []) {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i]?.role === "user") {
+      const text = (history[i].parts || [])
+        .map((part: any) => part?.text || "")
+        .filter(Boolean)
+        .join(" ");
+      if (text.trim()) return text.trim();
+    }
+  }
+  return "A simple 3D printable enclosure with a lid.";
+}
+
+function buildFallback3DResponse(history: any[] = []) {
+  const prompt = getLastUserPrompt(history).slice(0, 240);
+  return `Design Analysis:
+Gemini is temporarily busy, so I generated a reliable fallback parametric project box from your request: "${prompt}". This model includes a printable base, wall thickness, a separate lid, and part_mode controls so you can preview all parts, base only, lid only, or separated parts on the print bed.
+
+Parameters:
+\`\`\`json
+[
+  {"name": "width", "label": "Width", "type": "number", "default": 80, "min": 30, "max": 180},
+  {"name": "depth", "label": "Depth", "type": "number", "default": 55, "min": 30, "max": 160},
+  {"name": "height", "label": "Height", "type": "number", "default": 28, "min": 15, "max": 90},
+  {"name": "wall", "label": "Wall Thickness", "type": "number", "default": 2.4, "min": 1.2, "max": 5},
+  {"name": "lid_thickness", "label": "Lid Thickness", "type": "number", "default": 3, "min": 1.5, "max": 8},
+  {"name": "part_mode", "label": "Part Mode", "type": "select", "default": "all", "options": ["all", "base", "lid", "separate"]}
+]
+\`\`\`
+
+\`\`\`scad
+$fn = 50;
+width = 80;
+depth = 55;
+height = 28;
+wall = 2.4;
+lid_thickness = 3;
+fit = 0.35;
+part_mode = "all"; // [all, base, lid, separate]
+
+module base() {
+  difference() {
+    cube([width, depth, height], center=false);
+    translate([wall, wall, wall])
+      cube([width - 2*wall, depth - 2*wall, height], center=false);
+  }
+  translate([wall + fit, wall + fit, height - wall])
+    difference() {
+      cube([width - 2*(wall + fit), depth - 2*(wall + fit), wall], center=false);
+      translate([wall, wall, -0.1])
+        cube([width - 4*wall - 2*fit, depth - 4*wall - 2*fit, wall + 0.2], center=false);
+    }
+}
+
+module lid() {
+  cube([width, depth, lid_thickness], center=false);
+  translate([wall + fit, wall + fit, lid_thickness])
+    cube([width - 2*(wall + fit), depth - 2*(wall + fit), wall], center=false);
+}
+
+if (part_mode == "base") {
+  base();
+} else if (part_mode == "lid") {
+  lid();
+} else if (part_mode == "separate") {
+  base();
+  translate([width + 15, 0, 0]) lid();
+} else {
+  base();
+  translate([0, 0, height + 2]) lid();
+}
+\`\`\`
+
+\`\`\`jscad
+export const main = (params = {}) => {
+  const { cuboid } = primitives;
+  const { translate } = transforms;
+  const { subtract, union } = booleans;
+
+  const width = Math.max(30, params.width ?? 80);
+  const depth = Math.max(30, params.depth ?? 55);
+  const height = Math.max(15, params.height ?? 28);
+  const wall = Math.max(1.2, params.wall ?? 2.4);
+  const lidThickness = Math.max(1.5, params.lid_thickness ?? 3);
+  const fit = 0.35;
+  const mode = params.part_mode || "all";
+
+  const box = (size, pos) => translate(pos, cuboid({ size }));
+
+  const baseOuter = box([width, depth, height], [width / 2, depth / 2, height / 2]);
+  const baseInner = box(
+    [Math.max(1, width - 2 * wall), Math.max(1, depth - 2 * wall), height],
+    [width / 2, depth / 2, wall + height / 2]
+  );
+  const baseShell = subtract(baseOuter, baseInner);
+  const rimOuter = box(
+    [Math.max(1, width - 2 * (wall + fit)), Math.max(1, depth - 2 * (wall + fit)), wall],
+    [width / 2, depth / 2, height - wall / 2]
+  );
+  const rimInner = box(
+    [Math.max(1, width - 4 * wall - 2 * fit), Math.max(1, depth - 4 * wall - 2 * fit), wall + 0.2],
+    [width / 2, depth / 2, height - wall / 2]
+  );
+  const basePart = union(baseShell, subtract(rimOuter, rimInner));
+
+  const lidPlate = box([width, depth, lidThickness], [width / 2, depth / 2, lidThickness / 2]);
+  const lidPlug = box(
+    [Math.max(1, width - 2 * (wall + fit)), Math.max(1, depth - 2 * (wall + fit)), wall],
+    [width / 2, depth / 2, lidThickness + wall / 2]
+  );
+  const lidPart = union(lidPlate, lidPlug);
+
+  if (mode === "base") return basePart;
+  if (mode === "lid") return lidPart;
+  if (mode === "separate") return [basePart, translate([width + 15, 0, 0], lidPart)];
+  return [basePart, translate([0, 0, height + 2], lidPart)];
+};
+\`\`\``;
+}
+
 async function startServer() {
   const app = express();
 
@@ -119,6 +239,17 @@ async function startServer() {
           const retryable = status === 429 || status === 503 || message.includes("UNAVAILABLE") || message.includes("high demand");
           if (!retryable) break;
         }
+      }
+
+      const status = lastError?.status || lastError?.error?.code;
+      const message = String(lastError?.message || "");
+      const canUseFallback = status === 429 || status === 503 || message.includes("UNAVAILABLE") || message.includes("high demand");
+      if (canUseFallback) {
+        return res.json({
+          text: buildFallback3DResponse(history),
+          model: "local-fallback",
+          warning: "Gemini is temporarily busy, so a local fallback model was generated."
+        });
       }
 
       throw lastError;
