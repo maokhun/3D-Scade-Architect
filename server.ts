@@ -255,7 +255,9 @@ Respond strictly with valid JSON following the provided schema. Do not include m
   });
 
   // Vite Integration
-  if (process.env.NODE_ENV !== "production") {
+  const isProduction = process.env.NODE_ENV === "production" || process.env.npm_lifecycle_event === "start";
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
