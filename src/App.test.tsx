@@ -36,7 +36,7 @@ describe('App', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: /untitled project/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /register account/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/describe your 3d component/i)).toBeInTheDocument();
   });
 });

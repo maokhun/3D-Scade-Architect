@@ -70,6 +70,14 @@ interface SavedProject {
   data: any;
 }
 
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
+
+const GOOGLE_CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || "";
+
 const PART_LIBRARY = [
   {
     category: "Enclosures",
@@ -678,6 +686,8 @@ export default function App() {
   const [showAccountSetup, setShowAccountSetup] = useState(false);
   const [accountName, setAccountName] = useState('');
   const [accountEmail, setAccountEmail] = useState('');
+  const [googleAuthStatus, setGoogleAuthStatus] = useState('');
+  const googleButtonRef = useRef<HTMLDivElement>(null);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [engineView, setEngineView] = useState<'jscad' | 'scad'>('jscad');
 
@@ -975,6 +985,68 @@ export default function App() {
     localStorage.setItem('3d_architect_user_profile', JSON.stringify(profile));
     setShowAccountSetup(false);
   };
+
+  const saveGoogleProfile = (credential: string) => {
+    try {
+      const payload = credential.split('.')[1];
+      const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+      const decoded = JSON.parse(decodeURIComponent(escape(atob(base64))));
+      const email = String(decoded.email || '').trim().toLowerCase();
+      if (!email) throw new Error('Google account did not return an email.');
+      const profile = {
+        name: String(decoded.name || decoded.given_name || 'Google User'),
+        email,
+        registeredAt: Date.now()
+      };
+      setUserProfile(profile);
+      setAccountName(profile.name);
+      setAccountEmail(profile.email);
+      localStorage.setItem('3d_architect_user_profile', JSON.stringify(profile));
+      setShowAccountSetup(false);
+    } catch (error: any) {
+      setGoogleAuthStatus(error?.message || 'Google sign-in failed.');
+    }
+  };
+
+  useEffect(() => {
+    if (!showAccountSetup || !GOOGLE_CLIENT_ID || !googleButtonRef.current) return;
+
+    let cancelled = false;
+    setGoogleAuthStatus('');
+
+    const renderGoogleButton = () => {
+      if (cancelled || !window.google?.accounts?.id || !googleButtonRef.current) return;
+      googleButtonRef.current.innerHTML = '';
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response: any) => saveGoogleProfile(response.credential)
+      });
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        theme: theme === 'dark' ? 'filled_black' : 'outline',
+        size: 'large',
+        shape: 'rectangular',
+        text: 'continue_with',
+        width: 420
+      });
+    };
+
+    if (window.google?.accounts?.id) {
+      renderGoogleButton();
+    } else {
+      const existingScript = document.querySelector<HTMLScriptElement>('script[src="https://accounts.google.com/gsi/client"]');
+      const script = existingScript || document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = renderGoogleButton;
+      script.onerror = () => setGoogleAuthStatus('Could not load Google sign-in. Check your network or Client ID.');
+      if (!existingScript) document.head.appendChild(script);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showAccountSetup, theme]);
 
   // Proactively push state to history when changed by user or AI
   useEffect(() => {
@@ -2131,13 +2203,39 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
                   </div>
                   <div>
                     <h3 className="text-xl font-black text-app-text uppercase tracking-tight">
-                      {language === 'km' ? 'ចុះឈ្មោះប្រើប្រាស់' : 'Register Account'}
+                      {language === 'km' ? 'បង្កើតគណនី' : 'Create Account'}
                     </h3>
                     <p className="text-[11px] text-app-text-muted">
-                      {language === 'km' ? 'រក្សា project តាម email នៅលើ browser នេះ។' : 'Store projects by email on this browser.'}
+                      {language === 'km' ? 'ចូលដោយ Google ឬ email ដើម្បីរក្សា projects។' : 'Sign up with Google or email to keep projects organized.'}
                     </p>
                   </div>
                 </div>
+
+                <div className="mb-5">
+                  {GOOGLE_CLIENT_ID ? (
+                    <div className="rounded-xl border border-app-border bg-app-bg p-2">
+                      <div ref={googleButtonRef} className="min-h-[44px] flex items-center justify-center" />
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-[11px] leading-relaxed text-amber-200">
+                      {language === 'km'
+                        ? 'Google Sign-In ត្រូវការ VITE_GOOGLE_CLIENT_ID នៅក្នុង environment មុនពេលប្រើបាន។'
+                        : 'Google Sign-In needs VITE_GOOGLE_CLIENT_ID configured before it can be used.'}
+                    </div>
+                  )}
+                  {googleAuthStatus && (
+                    <p className="mt-2 text-[11px] text-red-400">{googleAuthStatus}</p>
+                  )}
+                </div>
+
+                <div className="mb-5 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-app-border" />
+                  <span className="text-[9px] font-black uppercase tracking-widest text-app-text-muted">
+                    {language === 'km' ? 'ឬ' : 'or'}
+                  </span>
+                  <div className="h-px flex-1 bg-app-border" />
+                </div>
+
                 <div className="space-y-3">
                   <input
                     className="w-full bg-app-bg border border-app-border px-4 py-3 rounded-xl text-app-text outline-none focus:border-[#3b82f6] transition-all"
@@ -2164,7 +2262,7 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
                     <button onClick={() => setShowAccountSetup(false)} className="flex-1 py-3 text-[11px] font-black uppercase text-app-text-muted hover:text-app-text transition-all">Cancel</button>
                   )}
                   <button onClick={handleRegisterAccount} className="flex-1 py-3 bg-[#3b82f6] text-white rounded-xl text-[11px] font-black uppercase shadow-lg shadow-blue-900/30">
-                    {language === 'km' ? 'រក្សាទុក' : 'Save Account'}
+                    {language === 'km' ? 'បង្កើតគណនី' : 'Create Account'}
                   </button>
                 </div>
               </motion.div>
