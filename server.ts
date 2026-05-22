@@ -95,20 +95,41 @@ async function startServer() {
     try {
       const { history, modelName } = req.body;
       const client = getGeminiClient();
+      const requestedModel = modelName || "gemini-2.5-flash";
+      const fallbackModels = [requestedModel, "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+      const modelsToTry = [...new Set(fallbackModels)];
+      let lastError: any = null;
 
-      const response = await client.models.generateContent({
-        model: modelName || "gemini-3.5-flash",
-        contents: history,
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
-          temperature: 0.5,
-        },
-      });
+      for (const model of modelsToTry) {
+        try {
+          const response = await client.models.generateContent({
+            model,
+            contents: history,
+            config: {
+              systemInstruction: SYSTEM_INSTRUCTION,
+              temperature: 0.5,
+            },
+          });
 
-      res.json({ text: response.text || "" });
+          return res.json({ text: response.text || "", model });
+        } catch (err: any) {
+          lastError = err;
+          const status = err?.status || err?.error?.code;
+          const message = String(err?.message || "");
+          const retryable = status === 429 || status === 503 || message.includes("UNAVAILABLE") || message.includes("high demand");
+          if (!retryable) break;
+        }
+      }
+
+      throw lastError;
     } catch (err: any) {
       console.error("Generate API Error:", err);
-      res.status(500).json({ error: err.message || "An error occurred with Gemini." });
+      const status = err?.status || err?.error?.code || 500;
+      const message = String(err?.message || "");
+      const friendlyMessage = status === 503 || message.includes("UNAVAILABLE") || message.includes("high demand")
+        ? "Gemini is currently busy. Please wait a moment and try again."
+        : err.message || "An error occurred with Gemini.";
+      res.status(status === 429 || status === 503 ? status : 500).json({ error: friendlyMessage });
     }
   });
 
@@ -121,7 +142,7 @@ async function startServer() {
       }
 
       const client = getGeminiClient();
-      const actualModel = modelName || "gemini-3.5-flash";
+      const actualModel = modelName || "gemini-2.5-flash";
 
       const promptPart = {
         text: `You are an expert computer vision system and 3D modeling assistant.

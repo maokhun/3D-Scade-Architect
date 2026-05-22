@@ -26,7 +26,7 @@ export interface DetectionResponse {
 }
 
 export class GeminiService {
-  async generate3DCode(history: ChatMessage[], modelName: string = "gemini-3.5-flash") {
+  async generate3DCode(history: ChatMessage[], modelName: string = "gemini-2.5-flash") {
     try {
       // Map history to the format expected by our backend (and raw API)
       const formattedHistory = history.map(msg => ({
@@ -51,7 +51,10 @@ export class GeminiService {
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.error || `Server responded with ${response.status}`);
+        const errorMessage = typeof errData.error === 'string'
+          ? errData.error
+          : errData.error?.message || `Server responded with ${response.status}`;
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -62,7 +65,7 @@ export class GeminiService {
     }
   }
 
-  async detectObjects(imageData: string, mimeType: string, modelName: string = "gemini-3.5-flash"): Promise<DetectionResponse> {
+  async detectObjects(imageData: string, mimeType: string, modelName: string = "gemini-2.5-flash"): Promise<DetectionResponse> {
     try {
       const response = await fetch("/api/gemini/detect", {
         method: "POST",
@@ -78,7 +81,10 @@ export class GeminiService {
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.error || `Server responded with ${response.status}`);
+        const errorMessage = typeof errData.error === 'string'
+          ? errData.error
+          : errData.error?.message || `Server responded with ${response.status}`;
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();

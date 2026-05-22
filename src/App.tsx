@@ -508,7 +508,7 @@ export default function App() {
   const [lastUploadedImage, setLastUploadedImage] = useState<string | null>(null);
   const [conceptImages, setConceptImages] = useState<{prompt: string, url: string}[]>([]);
   const [designAnalysis, setDesignAnalysis] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<'gemini-3-flash-preview' | 'gemini-3.1-pro-preview'>('gemini-3-flash-preview');
+  const [selectedModel, setSelectedModel] = useState<'gemini-2.5-flash' | 'gemini-2.5-flash-lite'>('gemini-2.5-flash');
   const [showSettings, setShowSettings] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -1299,7 +1299,19 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
       
     } catch (error: any) {
       console.error(error);
-      alert(`Error: ${error?.message || 'Failed to generate model'}`);
+      const errorText = error?.message || 'Failed to generate model.';
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'model',
+          parts: [{
+            text: language === 'km'
+              ? `ម៉ូដែល Gemini កំពុងរវល់ ឬមានបញ្ហាបណ្ដោះអាសន្ន។ សូមចុច Generate ម្ដងទៀតបន្តិចទៀត។\n\n${errorText}`
+              : `Gemini is busy or temporarily unavailable. Please try Generate again in a moment.\n\n${errorText}`
+          }]
+        }
+      ]);
+      setActiveTab('chat');
     } finally {
       setIsLoading(false);
       setLoadingStep('');
@@ -2128,24 +2140,24 @@ ${modelParams ? JSON.stringify(modelParams, null, 2) : "None"}`;
                     <label className="text-[10px] font-black uppercase tracking-widest text-app-text-muted block mb-4">Processing Mode</label>
                     <div className="grid grid-cols-2 gap-3 bg-app-surface p-1.5 rounded-2xl border border-app-border">
                       <button 
-                        onClick={() => setSelectedModel('gemini-3-flash-preview')}
-                        className={`flex flex-col items-center gap-2 py-4 rounded-xl transition-all ${selectedModel === 'gemini-3-flash-preview' ? 'bg-[#3b82f6] text-white shadow-xl shadow-blue-500/20' : 'text-app-text-muted hover:text-app-text-dim'}`}
+                        onClick={() => setSelectedModel('gemini-2.5-flash')}
+                        className={`flex flex-col items-center gap-2 py-4 rounded-xl transition-all ${selectedModel === 'gemini-2.5-flash' ? 'bg-[#3b82f6] text-white shadow-xl shadow-blue-500/20' : 'text-app-text-muted hover:text-app-text-dim'}`}
                       >
                         <RefreshCw className="w-4.5 h-4.5" />
                         <span className="text-[10px] font-black uppercase">Fast Mode</span>
                       </button>
                       <button 
-                        onClick={() => setSelectedModel('gemini-3.1-pro-preview')}
-                        className={`flex flex-col items-center gap-2 py-4 rounded-xl transition-all ${selectedModel === 'gemini-3.1-pro-preview' ? 'bg-[#3b82f6] text-white shadow-xl shadow-blue-500/20' : 'text-app-text-muted hover:text-app-text-dim'}`}
+                        onClick={() => setSelectedModel('gemini-2.5-flash-lite')}
+                        className={`flex flex-col items-center gap-2 py-4 rounded-xl transition-all ${selectedModel === 'gemini-2.5-flash-lite' ? 'bg-[#3b82f6] text-white shadow-xl shadow-blue-500/20' : 'text-app-text-muted hover:text-app-text-dim'}`}
                       >
                         <Cpu className="w-5 h-5" />
-                        <span className="text-[10px] font-black uppercase">Smartest</span>
+                        <span className="text-[10px] font-black uppercase">Lite Mode</span>
                       </button>
                     </div>
                     <p className="text-[10px] text-app-text-muted mt-3 leading-relaxed italic">
-                      {selectedModel === 'gemini-3-flash-preview' 
-                        ? "Best for quick shapes and prototyping. Lower latency."
-                        : "Extreme precision for complex assemblies. Higher token limits."}
+                      {selectedModel === 'gemini-2.5-flash'
+                        ? "Stable default for 3D generation. If demand spikes, the server retries with Lite."
+                        : "Fast fallback for temporary high-demand periods."}
                     </p>
                   </div>
 
